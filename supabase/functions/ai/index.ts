@@ -9,7 +9,7 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY') ?? '';
-const MODELS = [Deno.env.get('GEMINI_MODEL'), 'gemini-3.5-flash-lite', 'gemini-flash-latest'].filter(Boolean) as string[];
+const MODELS = [...new Set([Deno.env.get('GEMINI_MODEL'), 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-flash-latest'].filter(Boolean))] as string[];
 
 class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -67,7 +67,11 @@ async function gemini(parts: unknown[]): Promise<any> {
     lastErr = j.error?.message ?? `HTTP ${r.status}`;
     if (r.status === 429) throw new HttpError(429, 'Đã dùng hết lượt AI miễn phí trong lúc này. Hãy thử lại sau ít phút.');
     if (r.status === 400 && /api key/i.test(lastErr)) throw new HttpError(500, 'Khoá Gemini (GEMINI_API_KEY) không hợp lệ.');
-    if (r.status !== 404 && !/not found|not supported/i.test(lastErr)) break; // lỗi khác → không thử model khác
+    // model không tồn tại hoặc đang quá tải → thử model tiếp theo; lỗi khác → dừng
+    if (![404, 500, 503].includes(r.status) && !/not found|not supported|high demand|overloaded|unavailable/i.test(lastErr)) break;
+  }
+  if (/high demand|overloaded|unavailable/i.test(lastErr)) {
+    throw new HttpError(503, 'Máy chủ AI của Google đang quá tải. Hãy thử lại sau ít phút.');
   }
   throw new HttpError(502, 'Gemini lỗi: ' + lastErr);
 }

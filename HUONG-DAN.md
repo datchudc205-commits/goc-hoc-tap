@@ -110,7 +110,7 @@ App có 3 tính năng AI. Chỉ **người giao bài** dùng được, và mọi
 1. Vào https://aistudio.google.com/apikey → đăng nhập Google → **Create API key** → chép khóa.
 2. Vào Supabase → **Edge Functions → Secrets** → *Name*: `GEMINI_API_KEY`, *Value*: dán khóa vừa chép → **Save**.
 3. (Không bắt buộc) Muốn đổi model thì thêm secret `GEMINI_MODEL`, VD: `gemini-3.5-flash-lite`.
-   Mặc định app dùng `gemini-3.5-flash-lite`; nếu model này không có, app tự chuyển sang `gemini-flash-latest`.
+   Mặc định app dùng `gemini-3.5-flash-lite`; nếu model đó quá tải hoặc không có, app tự thử `gemini-3.1-flash-lite`, `gemini-3.6-flash`, rồi `gemini-flash-latest`.
 
 Khóa chỉ nằm trên máy chủ Supabase (trong `supabase/functions/ai/index.ts`), **không bao giờ** gửi xuống trình duyệt của em.
 
