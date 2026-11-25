@@ -12,6 +12,19 @@
 </head>
 <body>
   <div id="app"><div class="center muted" style="padding:3rem">Đang tải…</div></div>
-  <script type="module" src="js/main.js"></script>
+  <script>
+    // Luôn tải các file JS cùng một phiên bản mới nhất (tránh trộn file cũ/mới sau khi cập nhật app)
+    (function () {
+      var v = Date.now(), imports = {};
+      ['main', 'config', 'db', 'lib', 'ui', 'auth', 'teacher', 'student', 'mathgen', 'image'].forEach(function (f) {
+        imports['./js/' + f + '.js'] = './js/' + f + '.js?v=' + v;
+      });
+      var s = document.createElement('script');
+      s.type = 'importmap';
+      s.textContent = JSON.stringify({ imports: imports });
+      document.currentScript.after(s);
+    })();
+  </script>
+  <script type="module">import './js/main.js';</script>
 </body>
 </html>
