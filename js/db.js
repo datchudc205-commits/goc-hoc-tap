@@ -38,6 +38,19 @@ export async function q(promise) {
 
 export const rpc = (fn, args) => q(sb.rpc(fn, args));
 
+// Gọi AI (Gemini) qua Edge Function "ai" trên Supabase
+export async function ai(body) {
+  const { data, error } = await sb.functions.invoke('ai', { body });
+  if (error) {
+    let msg = error.message;
+    try { const b = await error.context.json(); if (b && b.error) msg = b.error; } catch { /* giữ nguyên */ }
+    if (/failed to send|not found/i.test(msg)) msg = 'Chưa kết nối được AI. Kiểm tra Edge Function "ai" đã được cài trên Supabase chưa.';
+    throw new Error(viError({ message: msg }));
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
 // Lấy link xem ảnh (ảnh để ở kho riêng tư nên cần link có hạn)
 export async function signedUrls(paths) {
   if (!paths.length) return {};

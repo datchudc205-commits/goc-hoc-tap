@@ -164,6 +164,10 @@ fieldset:disabled input, fieldset:disabled textarea, fieldset:disabled select { 
 }
 .add-bar { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0 1rem; }
 .gen summary { cursor: pointer; font-weight: 600; }
+.gen.ai { border: 1px solid #d9e4fb; background: linear-gradient(180deg, #f7faff, #fff); }
+.gen.ai[open] summary { margin-bottom: .8rem; }
+.ai-bar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.ai-bar .alert { width: 100%; margin: 0; }
 .gen .chips { margin-top: .8rem; }
 .save-bar {
   position: sticky; bottom: 0; display: flex; gap: .6rem; justify-content: flex-end; padding: .8rem 0;

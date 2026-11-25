@@ -97,13 +97,24 @@ goc-hoc-tap/
 
 ---
 
-## Giai đoạn 2 – Thêm Gemini (kế hoạch)
+## AI Gemini
 
-Khóa Gemini **phải để trên máy chủ**, không để trong `js/`. Dự kiến làm như sau:
+App có 3 tính năng AI. Chỉ **người giao bài** dùng được, và mọi kết quả AI đều chờ bạn duyệt:
 
-1. Tạo một **Supabase Edge Function** tên `ai`, lưu `GEMINI_API_KEY` trong phần *Secrets* của Supabase.
-2. **✨ AI soạn đề** (trong màn hình soạn bài): nhập chủ đề, lớp và số câu. Gemini trả về danh sách câu hỏi **đúng định dạng** mà `save_assignment` đang dùng (`type`, `prompt`, `options`, `accepted`, `explanation`, `points`). Câu hỏi được đổ vào trình soạn bài để bạn duyệt và sửa trước khi giao.
-3. **✨ AI gợi ý chấm** (trong màn hình chấm bài): gửi ảnh hoặc bài tự luận kèm đáp án mẫu. Gemini điền sẵn điểm và nhận xét vào ô chấm, **bạn vẫn bấm "Trả bài"** để xác nhận.
-4. **Gợi ý bài luyện:** đưa danh sách "Câu em làm sai gần đây" (đã có ở trang Tiến độ) cho Gemini để ra bài luyện đúng chỗ yếu.
+- **✨ AI soạn đề** (trong màn hình *Giao bài mới*): nhập chủ đề, lớp, độ khó, số câu → AI đổ câu hỏi vào bài. Bạn đọc lại, sửa rồi mới giao.
+- **✨ AI gợi ý chấm** (trong màn hình *Chấm bài*): AI đọc bài tự luận, **ảnh chụp bài làm**, và câu điền bị máy chấm sai, rồi điền sẵn điểm và nhận xét. Câu AI không chắc được đánh dấu ⚠. Bạn vẫn là người bấm **Trả bài**.
+- **✨ AI soạn bài luyện** (trong trang *Tiến độ*): lấy các câu em làm sai gần đây để soạn bài luyện mới.
 
-Cơ sở dữ liệu hiện tại đã đủ cho các bước này, không cần sửa bảng.
+### Cài khóa Gemini (làm một lần)
+
+1. Vào https://aistudio.google.com/apikey → đăng nhập Google → **Create API key** → chép khóa.
+2. Vào Supabase → **Edge Functions → Secrets** → *Name*: `GEMINI_API_KEY`, *Value*: dán khóa vừa chép → **Save**.
+3. (Không bắt buộc) Muốn đổi model thì thêm secret `GEMINI_MODEL`, VD: `gemini-3.5-flash-lite`.
+   Mặc định app dùng `gemini-3.5-flash-lite`; nếu model này không có, app tự chuyển sang `gemini-flash-latest`.
+
+Khóa chỉ nằm trên máy chủ Supabase (trong `supabase/functions/ai/index.ts`), **không bao giờ** gửi xuống trình duyệt của em.
+
+### Sửa code AI
+
+Code nằm ở `supabase/functions/ai/index.ts`. Sau khi sửa, vào Supabase → **Edge Functions → ai → Code**, dán code mới rồi bấm **Deploy**.
+Cài đặt *Verify JWT with legacy secret* để **tắt**, vì hàm đã tự kiểm tra đăng nhập và vai trò.

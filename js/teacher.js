@@ -1,5 +1,5 @@
 import { html, useState, useMemo } from './lib.js';
-import { sb, q, rpc, signedUrls } from './db.js';
+import { sb, q, rpc, signedUrls, ai } from './db.js';
 import {
   useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, SUBJECTS, fmtDate, fmtNum, dueInfo,
   scoreOn10, ScoreBadge, statusOf, nl2br,
@@ -135,8 +135,17 @@ function fromDb(row) {
   };
 }
 
+// Câu hỏi từ bộ sinh đề toán hoặc từ AI → dạng của trình soạn bài
 function fromGenerated(g) {
-  return { ...blankQuestion('short'), prompt: g.prompt, points: g.points, explanation: g.explanation, acceptedText: g.accepted.join('\n') };
+  return {
+    ...blankQuestion(g.type),
+    prompt: g.prompt,
+    points: g.points,
+    explanation: g.explanation || '',
+    options: g.type === 'mcq' ? [...g.options] : [],
+    correct: g.type === 'mcq' ? Number(g.accepted[0]) : null,
+    acceptedText: g.type === 'short' ? g.accepted.join('\n') : '',
+  };
 }
 
 function toLocalInput(iso) {
@@ -294,6 +303,7 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
           <button class="btn" onClick=${() => addQ([blankQuestion(t)])}>+ ${label}</button>`)}
       </div>
 
+      <${AIGenerator} subject=${form.subject} onAdd=${(items) => addQ(items.map(fromGenerated))} />
       <${MathGenerator} onAdd=${(items) => addQ(items.map(fromGenerated))} />
     </fieldset>
 
@@ -358,6 +368,72 @@ function QuestionEditor({ q: x, index, total, onChange, onMove, onRemove }) {
     </div>`;
 }
 
+// ✨ AI soạn đề (Gemini). Trang Tiến độ có thể gửi sẵn chủ đề qua sessionStorage('ai-topic').
+const AI_TYPES = { mcq: 'Trắc nghiệm', short: 'Điền đáp án', essay: 'Tự luận' };
+
+function AIGenerator({ subject, onAdd }) {
+  const [preset] = useState(() => {
+    const p = sessionStorage.getItem('ai-topic') || '';
+    sessionStorage.removeItem('ai-topic');
+    return p;
+  });
+  const [topic, setTopic] = useState(preset);
+  const [grade, setGrade] = useState(localStorage.getItem('ai-grade') || '3');
+  const [count, setCount] = useState(5);
+  const [level, setLevel] = useState('vừa');
+  const [types, setTypes] = useState(['mcq', 'short']);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
+  const toggle = (t) => setTypes((x) => (x.includes(t) ? x.filter((y) => y !== t) : [...x, t]));
+
+  async function run() {
+    setBusy(true); setErr(''); setMsg('');
+    localStorage.setItem('ai-grade', grade);
+    try {
+      const { questions } = await ai({ action: 'generate', topic, subject, grade, level, count: Number(count), types });
+      onAdd(questions);
+      setMsg(`✔ Đã thêm ${questions.length} câu ở trên. Hãy đọc lại và sửa nếu cần trước khi giao.`);
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+
+  return html`
+    <details class="card gen ai" open=${!!preset}>
+      <summary>✨ AI soạn đề (Gemini)</summary>
+      <label>Chủ đề / nội dung cần ôn
+        <textarea rows="3" value=${topic} onInput=${(e) => setTopic(e.target.value)}
+          placeholder="VD: Bảng nhân 7 và bài toán có lời văn về nhân. Hoặc dán nội dung bài học vào đây."></textarea>
+      </label>
+      <div class="grid4">
+        <label>Lớp
+          <select value=${grade} onChange=${(e) => setGrade(e.target.value)}>
+            ${['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'].map((g) => html`<option value=${g}>Lớp ${g}</option>`)}
+          </select>
+        </label>
+        <label>Độ khó
+          <select value=${level} onChange=${(e) => setLevel(e.target.value)}>
+            ${['dễ', 'vừa', 'khó'].map((l) => html`<option value=${l}>${l}</option>`)}
+          </select>
+        </label>
+        <label>Số câu <input type="number" min="1" max="20" value=${count} onInput=${(e) => setCount(e.target.value)} /></label>
+        <label>Môn <input value=${subject} disabled /></label>
+      </div>
+      <div class="chips">
+        ${Object.entries(AI_TYPES).map(([t, l]) => html`
+          <label class=${'chip ' + (types.includes(t) ? 'on' : '')}>
+            <input type="checkbox" checked=${types.includes(t)} onChange=${() => toggle(t)} /> ${l}
+          </label>`)}
+      </div>
+      <${ErrorBox} msg=${err} />
+      ${msg && html`<div class="alert ok">${msg}</div>`}
+      <button class="btn primary" disabled=${busy || !topic.trim() || !types.length} onClick=${run}>
+        ${busy ? 'AI đang soạn… (khoảng 10–30 giây)' : `✨ Soạn ${count} câu`}
+      </button>
+      <p class="small muted">AI có thể sai. Luôn đọc lại đề và đáp án trước khi giao cho em.</p>
+    </details>`;
+}
+
 function MathGenerator({ onAdd }) {
   const [ops, setOps] = useState(['+']);
   const [min, setMin] = useState(1);
@@ -400,6 +476,10 @@ export function GradeSubmission({ id }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [saveErr, setSaveErr] = useState('');
+  const [aiInfo, setAiInfo] = useState({}); // question_id → độ tin cậy AI
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMsg, setAiMsg] = useState('');
+  const [aiErr, setAiErr] = useState('');
 
   const [data, err, reload] = useLoad(async () => {
     const s = await q(sb.from('submissions').select('*, assignments(id, title, subject, instructions, due_at)').eq('id', id).single());
@@ -429,6 +509,27 @@ export function GradeSubmission({ id }) {
   const total = qs.reduce((t, x) => t + (Number(grades[x.id] && grades[x.id].points) || 0), 0);
   const missing = qs.filter((x) => !grades[x.id] || grades[x.id].points === '').length;
   const setG = (qid, patch) => setGrades((g) => ({ ...g, [qid]: { ...g[qid], ...patch } }));
+
+  async function aiGrade() {
+    setAiBusy(true); setAiErr(''); setAiMsg('');
+    try {
+      const res = await ai({ action: 'grade', submission_id: id });
+      if (!res.grades.length) {
+        setAiMsg('Không có câu tự luận / ảnh nào cần AI chấm.');
+      } else {
+        setGrades((g) => {
+          const next = { ...g };
+          for (const r of res.grades) next[r.question_id] = { points: String(r.points), feedback: r.feedback };
+          return next;
+        });
+        setAiInfo(Object.fromEntries(res.grades.map((r) => [r.question_id, r.confidence])));
+        if (res.overall_comment) setComment((c) => c.trim() ? c : res.overall_comment);
+        const low = res.grades.filter((r) => r.confidence === 'thấp').length;
+        setAiMsg(`✨ AI đã điền gợi ý cho ${res.grades.length} câu${low ? `, trong đó ${low} câu AI không chắc chắn (đánh dấu ⚠)` : ''}. Hãy xem lại rồi mới bấm "Trả bài".`);
+      }
+    } catch (e) { setAiErr(e.message); }
+    setAiBusy(false);
+  }
 
   async function submit() {
     setBusy(true); setSaveErr(''); setMsg('');
@@ -460,6 +561,16 @@ export function GradeSubmission({ id }) {
     ${s.status === 'in_progress' && html`<div class="alert warn">Em đang làm, chưa nộp. Dưới đây là phần em đã làm tới giờ.</div>`}
     ${s.status === 'returned' && html`<div class="alert ok">Đã trả bài lúc ${fmtDate(s.returned_at)}. Bạn vẫn có thể sửa điểm rồi bấm "Cập nhật".</div>`}
 
+    ${s.status !== 'in_progress' && qs.some((x) => x.type === 'essay' || x.type === 'photo' || x.type === 'short') && html`
+      <div class="card ai-bar">
+        <button class="btn primary" disabled=${aiBusy} onClick=${aiGrade}>
+          ${aiBusy ? 'AI đang chấm… (khoảng 10–40 giây)' : '✨ AI gợi ý chấm'}
+        </button>
+        <span class="small muted">AI đọc bài tự luận, ảnh chụp và câu điền bị máy chấm sai, rồi điền sẵn điểm + nhận xét để bạn duyệt.</span>
+        <${ErrorBox} msg=${aiErr} />
+        ${aiMsg && html`<div class="alert ok">${aiMsg}</div>`}
+      </div>`}
+
     ${qs.map((x, i) => {
       const ans = byQ[x.id];
       const k = keyOf(x);
@@ -483,6 +594,8 @@ export function GradeSubmission({ id }) {
               <button class="btn small" onClick=${() => setG(x.id, { points: String(Number(x.points)) })}>Đúng</button>
               <button class="btn small" onClick=${() => setG(x.id, { points: '0' })}>Sai</button>`}
             ${!manual && ans && ans.is_correct != null && html`<span class="muted small">(máy chấm: ${ans.is_correct ? 'đúng' : 'sai'})</span>`}
+            ${aiInfo[x.id] && html`<span class=${'tag ' + (aiInfo[x.id] === 'thấp' ? 'orange' : 'blue')}>
+              ${aiInfo[x.id] === 'thấp' ? '⚠ AI không chắc' : '✨ AI gợi ý'}</span>`}
           </div>
           <input class="feedback" placeholder="Nhận xét cho câu này (không bắt buộc)" value=${g.feedback}
                  disabled=${s.status === 'in_progress'} onInput=${(e) => setG(x.id, { feedback: e.target.value })} />
@@ -541,6 +654,14 @@ export function AnswerView({ q: x, ans, k, urls, showKey }) {
 // =====================================================================
 //  TIẾN ĐỘ HỌC TẬP
 // =====================================================================
+
+// Gửi danh sách câu sai sang trình soạn bài, mở sẵn khung "AI soạn đề"
+function practiceFromWrong(wrong) {
+  const lines = wrong.slice(0, 12).map((w) => `- [${w.submissions.assignments.subject}] ${w.questions.prompt}`);
+  sessionStorage.setItem('ai-topic',
+    `Soạn bài luyện tập giúp em khắc phục các dạng bài em đã làm sai gần đây (không chép lại y nguyên, đổi số/đổi ngữ cảnh, từ dễ đến khó):\n${lines.join('\n')}`);
+  go('/bai/moi');
+}
 export function Progress({ profile }) {
   const [studentId, setStudentId] = useState('');
   const [students, sErr] = useLoad(() => q(sb.from('profiles').select('id, full_name').eq('teacher_id', profile.id).order('created_at')));
@@ -620,6 +741,8 @@ export function Progress({ profile }) {
         <h2>Câu em làm sai gần đây</h2>
         <p class="small muted">Dùng danh sách này để chọn chủ đề cho bài luyện tiếp theo.</p>
         ${stats.wrong.length === 0 && html`<p class="muted">Không có câu sai nào. 🎉</p>`}
+        ${stats.wrong.length > 0 && html`
+          <button class="btn primary" onClick=${() => practiceFromWrong(stats.wrong)}>✨ AI soạn bài luyện từ các câu sai này</button>`}
         <ul class="wrong-list">
           ${stats.wrong.map((w) => html`
             <li>
