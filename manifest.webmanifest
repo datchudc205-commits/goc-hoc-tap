@@ -1,0 +1,9 @@
+{
+  "name": "Góc Học Tập",
+  "short_name": "Học Tập",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#2f6fde",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
