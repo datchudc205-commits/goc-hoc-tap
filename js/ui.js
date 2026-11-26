@@ -361,6 +361,15 @@ export function statusOf(a) {
   return { key: 'returned', label: 'Đã trả bài', cls: 'tag green' };
 }
 
+// Bỏ ký hiệu công thức kiểu LaTeX mà AI hay chèn: $x$ → x, \times → ×, \frac{a}{b} → a/b
+export function plainMath(text) {
+  return String(text || '')
+    .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '$1/$2')
+    .replace(/\\times/g, '×').replace(/\\cdot/g, '·').replace(/\\div/g, ':')
+    .replace(/\\neq/g, '≠').replace(/\\leq?/g, '≤').replace(/\\geq?/g, '≥')
+    .replace(/\$\$?([^$]+?)\$\$?/g, '$1');
+}
+
 export function nl2br(text) {
   return String(text || '').split('\n').map((line, i) => (i ? [html`<br />`, line] : line));
 }

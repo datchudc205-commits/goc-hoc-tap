@@ -1,7 +1,7 @@
 import { html, useState, useRef, useEffect } from './lib.js';
 import { sb, q, rpc, signedUrls, BUCKET } from './db.js';
 import {
-  useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, fmtDate, fmtNum, dueInfo, ScoreBadge, scoreOn10, nl2br, Icon,
+  useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, fmtDate, fmtNum, dueInfo, ScoreBadge, scoreOn10, nl2br, plainMath, Icon,
   toast, confirmDialog, EmptyState, SubjectChip, subjectTone, ProgressRing, relTime, countdown,
 } from './ui.js';
 import { AnswerView, keyOf } from './teacher.js';
@@ -373,7 +373,7 @@ export function DoAssignment({ profile, assignmentId }) {
 
           <div class="hint-zone">
             ${(hints[x.id] || []).map((h) => html`
-              <div class="hint-card"><div class="hint-level">💡 Gợi ý ${h.level}/3 · ${HINT_LABEL[h.level]}</div><div>${nl2br(h.hint)}</div></div>`)}
+              <div class="hint-card"><div class="hint-level">💡 Gợi ý ${h.level}/3 · ${HINT_LABEL[h.level]}</div><div>${nl2br(plainMath(h.hint))}</div></div>`)}
             ${(hints[x.id] || []).length < 3 ? html`
               <button class="btn hint-btn" disabled=${hintBusy === x.id} onClick=${() => askHint(x)}>
                 ${hintBusy === x.id ? html`<span class="btn-spin"></span> Cô đang nghĩ cách giải thích…`

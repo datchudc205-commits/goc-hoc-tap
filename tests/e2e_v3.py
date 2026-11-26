@@ -1,18 +1,23 @@
 """Thử nâng cấp 3 trên Supabase THẬT: thời gian làm bài, gợi ý AI (không lộ đáp án), sao, đổi quà, thử thách.
 Dùng: py tests/e2e_v3.py"""
-import pathlib, sys, time
+import pathlib, sys, time, urllib.parse
 
 ns = {"__file__": str(pathlib.Path(__file__).resolve().parent / "e2e_supabase.py")}
 exec(open(ns["__file__"], encoding="utf-8").read().split("n = 0")[0], ns)
-call, PW = ns["call"], ns["PW"]
+call = ns["call"]
 n = 0
 def ok(c, label, extra=""):
     global n
     if not c: sys.exit(f"✘ FAIL: {label} {extra}")
     n += 1; print("  ✔", label)
-def login(e):
-    st, d = call("POST", "/auth/v1/token?grant_type=password", {"email": e, "password": PW}); return d["access_token"], d["user"]["id"]
-tt, tid = login("gvthu@hocsinh.example"); ts, sid = login("hsthu@hocsinh.example")
+los = ns["login_or_signup"]
+tt, tid = los("gvthu@hocsinh.example", {"role": "teacher", "full_name": "Giáo viên thử"})
+code = call("GET", f"/rest/v1/profiles?id=eq.{tid}&select=invite_code", token=tt)[1][0]["invite_code"]
+ts, sid = los("hsthu@hocsinh.example", {"role": "student", "full_name": "Học sinh thử", "grade": "6", "invite_code": code})
+# dọn dữ liệu thử còn sót từ lần chạy trước
+for a in call("GET", "/rest/v1/assignments?select=id&title=eq." + urllib.parse.quote("Thử gợi ý & giờ"), token=tt)[1]:
+    call("DELETE", f"/rest/v1/assignments?id=eq.{a['id']}", token=tt)
+call("DELETE", "/rest/v1/rewards?title=eq." + urllib.parse.quote("Thử – 30 phút xem TV"), token=tt)
 def stars(): return call("POST", "/rest/v1/rpc/star_balance", {"p_student": sid}, token=ts)[1]
 start = stars()
 print("Sao ban đầu:", start)
@@ -42,7 +47,7 @@ for lvl in (1, 2, 3):
         time.sleep(15)
     ok(st == 200 and r["level"] == lvl, f"gợi ý mức {lvl}", (st, r))
     leak = "36" in r["hint"].replace("63", "").replace("27", "")
-    print(f"     → {r['hint'][:260].replace(chr(10), ' | ')}{'  ⚠ có số 36' if leak else ''}")
+    print(f"     → {r['hint'][:700].replace(chr(10), ' | ')}{'  ⚠ có số 36' if leak else ''}")
 st, r = call("POST", "/functions/v1/ai", {"action": "hint", "submission_id": sub, "question_id": q1}, token=ts)
 ok(st >= 400 and "hết 3" in r.get("error", ""), "tối đa 3 gợi ý", r)
 st, r = call("POST", "/functions/v1/ai", {"action": "hint", "submission_id": sub, "question_id": q1}, token=tt)
@@ -61,7 +66,7 @@ ok(sorted(e["code"] for e in ev) == ["ontime", "score"], "em thấy sao nhận �
 
 print("\n4. Đổi quà")
 st, rw = call("POST", "/rest/v1/rewards", {"title": "Thử – 30 phút xem TV", "cost": 2, "icon": "📺"}, token=tt)
-st, rws = call("GET", "/rest/v1/rewards?select=id,title&title=eq.Thử – 30 phút xem TV", token=ts)
+st, rws = call("GET", "/rest/v1/rewards?select=id,title&title=eq." + urllib.parse.quote("Thử – 30 phút xem TV"), token=ts)
 ok(len(rws) == 1, "em thấy phần thưởng")
 st, req = call("POST", "/rest/v1/rpc/request_reward", {"p_reward": rws[0]["id"]}, token=ts)
 ok(st == 200, "em xin đổi quà")

@@ -2,7 +2,7 @@ import { html, useState, useMemo, useEffect, useRef } from './lib.js';
 import { sb, q, rpc, signedUrls, ai } from './db.js';
 import {
   useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, SUBJECTS, fmtDate, fmtNum, dueInfo,
-  scoreOn10, ScoreBadge, statusOf, nl2br, Icon, Modal, randomPassword, LessonPicker,
+  scoreOn10, ScoreBadge, statusOf, nl2br, plainMath, Icon, Modal, randomPassword, LessonPicker,
   toast, confirmDialog, EmptyState, SubjectChip, SubjectIcon, Avatar, relTime, countdown, ProgressRing,
 } from './ui.js';
 import { generateMath, OPS } from './mathgen.js';
@@ -800,7 +800,7 @@ export function GradeSubmission({ id }) {
               <div class="prompt">${nl2br(x.prompt)}</div>
               <${AnswerView} q=${x} ans=${ans} k=${k} urls=${urls} showKey />
               ${s.hints[x.id] && html`<details class="hint-used"><summary>💡 Em đã xin ${s.hints[x.id].length} gợi ý cho câu này</summary>
-                ${s.hints[x.id].map((h) => html`<div class="hint-card"><div class="hint-level">Gợi ý ${h.level}</div>${nl2br(h.hint)}</div>`)}</details>`}
+                ${s.hints[x.id].map((h) => html`<div class="hint-card"><div class="hint-level">Gợi ý ${h.level}</div>${nl2br(plainMath(h.hint))}</div>`)}</details>`}
               <div class="grade-row">
                 <div class="score-input">
                   <input type="number" class="num" min="0" max=${x.points} step="0.25" value=${g.points} aria-label=${'Điểm câu ' + (i + 1)}
