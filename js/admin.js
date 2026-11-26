@@ -1,7 +1,7 @@
 // Trang quản trị: thống kê hệ thống + quản lý toàn bộ tài khoản
 import { html, useState } from './lib.js';
 import { rpc } from './db.js';
-import { useLoad, Loading, ErrorBox, fmtDate, fmtNum, Icon, Modal } from './ui.js';
+import { useLoad, Loading, ErrorBox, fmtDate, fmtNum, Icon, Modal, confirmDialog, toast, Avatar, relTime } from './ui.js';
 import { ResetPasswordModal } from './teacher.js';
 
 const ROLE = {
@@ -33,13 +33,18 @@ export function AdminPage({ profile }) {
 
   async function act(fn, ok) {
     setMsg(''); setActionErr('');
-    try { await fn(); setMsg(ok); reload(); } catch (e) { setActionErr(e.message); }
+    try { await fn(); toast(ok); reload(); } catch (e) { setActionErr(e.message); toast(e.message, 'error'); }
   }
-  const toggleBan = (u) => act(() => rpc('admin_set_banned', { p_user: u.id, p_banned: !u.banned }),
-    u.banned ? `✔ Đã mở khoá ${u.full_name}.` : `✔ Đã khoá ${u.full_name}.`);
-  const remove = (u) => {
-    if (!confirm(`Xoá vĩnh viễn tài khoản "${u.full_name}" (${u.login})?\n\nToàn bộ bài tập, bài làm, điểm của tài khoản này sẽ bị xoá và KHÔNG khôi phục được.`)) return;
-    act(() => rpc('admin_delete_user', { p_user: u.id }), `✔ Đã xoá ${u.full_name}.`);
+  const toggleBan = async (u) => {
+    if (!u.banned && !(await confirmDialog({ title: 'Khoá tài khoản?', confirmText: 'Khoá', danger: true,
+      message: `${u.full_name} sẽ không đăng nhập được cho tới khi được mở khoá.` }))) return;
+    act(() => rpc('admin_set_banned', { p_user: u.id, p_banned: !u.banned }),
+      u.banned ? `Đã mở khoá ${u.full_name}.` : `Đã khoá ${u.full_name}.`);
+  };
+  const remove = async (u) => {
+    const ok = await confirmDialog({ title: 'Xoá tài khoản?', danger: true, confirmText: 'Xoá vĩnh viễn',
+      message: `Tài khoản "${u.full_name}" (${u.login}) sẽ bị xoá vĩnh viễn.\nToàn bộ bài tập, bài làm và điểm của tài khoản này cũng bị xoá và KHÔNG khôi phục được.` });
+    if (ok) act(() => rpc('admin_delete_user', { p_user: u.id }), `Đã xoá ${u.full_name}.`);
   };
 
   const STATS = [
@@ -91,7 +96,7 @@ export function AdminPage({ profile }) {
             return html`
               <tr class=${u.banned ? 'row-muted' : ''}>
                 <td data-label="Tài khoản"><div class="cell-user">
-                  <span class="avatar sm">${u.full_name.slice(0, 1).toUpperCase()}</span>
+                  <${Avatar} name=${u.full_name} size="sm" />
                   <div><b>${u.full_name}</b>${u.id === profile.id ? html` <span class="muted small">(bạn)</span>` : ''}
                     <div class="mono small muted">${u.login}</div></div></div></td>
                 <td data-label="Vai trò"><span class=${r.cls}>${r.label}</span>
@@ -100,7 +105,7 @@ export function AdminPage({ profile }) {
                   ${u.role === 'student' ? html`${u.grade ? 'Lớp ' + u.grade : 'Chưa có lớp'}<div class="muted">↳ ${u.teacher_name || '—'}</div>`
                     : html`<span class="muted">${u.n_assignments} bài đã giao</span>`}</td>
                 <td data-label="Hoạt động" class="small">
-                  <div>${u.last_sign_in_at ? 'Đăng nhập ' + fmtDate(u.last_sign_in_at) : html`<span class="muted">Chưa đăng nhập</span>`}</div>
+                  <div>${u.last_sign_in_at ? 'Đăng nhập ' + relTime(u.last_sign_in_at) : html`<span class="muted">Chưa đăng nhập</span>`}</div>
                   <div class="muted">Tạo ${fmtDate(u.created_at, false)}${u.role === 'student' ? ` · ${u.n_returned} bài có điểm` : ''}</div></td>
                 <td data-label="Trạng thái">${u.banned ? html`<span class="tag red">Đã khoá</span>` : html`<span class="tag green">Hoạt động</span>`}</td>
                 <td class="actions">
@@ -119,7 +124,7 @@ export function AdminPage({ profile }) {
     </div>
 
     ${editing && html`<${EditUser} user=${editing} teachers=${teachers} self=${profile.id}
-      onClose=${() => setEditing(null)} onSaved=${(name) => { setEditing(null); setMsg(`✔ Đã cập nhật ${name}.`); reload(); }} />`}
+      onClose=${() => setEditing(null)} onSaved=${(name) => { setEditing(null); toast(`Đã cập nhật ${name}.`); reload(); }} />`}
     ${resetFor && html`<${ResetPasswordModal} user=${resetFor} onClose=${() => setResetFor(null)} />`}`;
 }
 

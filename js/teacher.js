@@ -3,6 +3,7 @@ import { sb, q, rpc, signedUrls, ai } from './db.js';
 import {
   useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, SUBJECTS, fmtDate, fmtNum, dueInfo,
   scoreOn10, ScoreBadge, statusOf, nl2br, Icon, Modal, randomPassword, LessonPicker,
+  toast, confirmDialog, EmptyState, SubjectChip, SubjectIcon, Avatar, relTime, countdown, ProgressRing,
 } from './ui.js';
 import { generateMath, OPS } from './mathgen.js';
 import { BOOK } from './curriculum.js';
@@ -10,52 +11,86 @@ import { BOOK } from './curriculum.js';
 export const keyOf = (row) => (Array.isArray(row.question_keys) ? row.question_keys[0] : row.question_keys) || { accepted: [], explanation: '' };
 
 // =====================================================================
-//  TRANG CHÍNH: danh sách bài đã giao
+//  BẢNG ĐIỀU KHIỂN
 // =====================================================================
+function greeting() {
+  const h = new Date().getHours();
+  return h < 11 ? 'Chào buổi sáng' : h < 14 ? 'Chào buổi trưa' : h < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
+}
+const todayLabel = () => new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+
 export function TeacherHome({ profile }) {
   const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
   const [data, err] = useLoad(async () => {
     const [students, assignments] = await Promise.all([
-      q(sb.from('profiles').select('id, full_name').eq('teacher_id', profile.id).order('created_at')),
+      rpc('my_students'),
       q(sb.from('assignments')
-        .select('id, title, subject, due_at, published, created_at, student_id, submissions(id, status, score, max_score, submitted_at)')
+        .select('id, title, subject, due_at, published, created_at, student_id, submissions(id, status, score, max_score, submitted_at, returned_at)')
         .eq('teacher_id', profile.id)
         .order('created_at', { ascending: false })),
     ]);
     const ids = students.map((s) => s.id);
     const classwork = ids.length
-      ? await q(sb.from('classwork').select('id, reviewed_at').in('student_id', ids).is('reviewed_at', null))
+      ? await q(sb.from('classwork').select('id, student_id, subject, lesson, status, score, created_at')
+          .in('student_id', ids).is('reviewed_at', null).order('created_at', { ascending: false }).limit(20))
       : [];
-    return { students, assignments, classworkToReview: classwork.length };
+    return { students, assignments, classwork };
   });
 
   if (err) return html`<${ErrorBox} msg=${err} />`;
-  if (!data) return html`<${Loading} />`;
+  if (!data) return html`<${Loading} rows=${4} />`;
 
-  const { students, assignments } = data;
+  const { students, assignments, classwork } = data;
   const names = Object.fromEntries(students.map((s) => [s.id, s.full_name]));
-  const withStatus = assignments.map((a) => ({ ...a, st: statusOf(a) }));
-  const counts = withStatus.reduce((c, a) => ((c[a.st.key] = (c[a.st.key] || 0) + 1), c), {});
+  const rows = assignments.map((a) => ({ ...a, st: statusOf(a), sub: a.submissions[0] }));
+  const counts = rows.reduce((c, a) => ((c[a.st.key] = (c[a.st.key] || 0) + 1), c), {});
   const FILTERS = [
-    ['all', 'Tất cả', assignments.length],
+    ['all', 'Tất cả', rows.length],
     ['submitted', 'Chờ chấm', counts.submitted || 0],
     ['open', 'Đang giao', (counts.assigned || 0) + (counts.doing || 0)],
     ['returned', 'Đã trả', counts.returned || 0],
     ['draft', 'Nháp', counts.draft || 0],
   ];
-  const shown = withStatus.filter((a) =>
-    filter === 'all' ? true : filter === 'open' ? ['assigned', 'doing'].includes(a.st.key) : a.st.key === filter);
+  const s = search.trim().toLowerCase();
+  const shown = rows.filter((a) =>
+    (filter === 'all' ? true : filter === 'open' ? ['assigned', 'doing'].includes(a.st.key) : a.st.key === filter)
+    && (!s || a.title.toLowerCase().includes(s) || a.subject.toLowerCase().includes(s)));
+  const returned = rows.filter((a) => a.st.key === 'returned');
+  const avg = returned.length ? returned.reduce((t, a) => t + (scoreOn10(a.sub.score, a.sub.max_score) || 0), 0) / returned.length : null;
 
-  const returned = withStatus.filter((a) => a.st.key === 'returned');
-  const avg = returned.length ? returned.reduce((t, a) => t + (scoreOn10(a.submissions[0].score, a.submissions[0].max_score) || 0), 0) / returned.length : null;
+  // Việc cần xử lý: bài chờ chấm, bài trên lớp chưa nhận xét, bài quá hạn chưa nộp
+  const todo = [
+    ...rows.filter((a) => a.st.key === 'submitted').map((a) => ({
+      key: 'g' + a.id, icon: 'clipboard', tone: 'warn', href: '#/cham/' + a.sub.id,
+      title: `Chấm bài: ${a.title}`, meta: `${names[a.student_id] || ''} nộp ${relTime(a.sub.submitted_at)}`, cta: 'Chấm bài' })),
+    ...classwork.filter((c) => c.status === 'checked').map((c) => ({
+      key: 'c' + c.id, icon: 'camera', tone: 'violet', href: '#/tren-lop/' + c.id,
+      title: `Bài trên lớp: ${c.subject}${c.lesson ? ' · ' + c.lesson : ''}`, meta: `${names[c.student_id] || ''} · AI: ${c.score == null ? '–' : fmtNum(c.score) + '/10'} · ${relTime(c.created_at)}`, cta: 'Nhận xét' })),
+    ...rows.filter((a) => ['assigned', 'doing'].includes(a.st.key) && a.due_at && new Date(a.due_at) < new Date()).map((a) => ({
+      key: 'o' + a.id, icon: 'clock', tone: 'red', href: '#/bai/' + a.id,
+      title: `Quá hạn: ${a.title}`, meta: `${names[a.student_id] || ''} chưa nộp · ${countdown(a.due_at).text.toLowerCase()}`, cta: 'Xem' })),
+  ];
+
+  // Tóm tắt từng học sinh
+  const perStudent = students.map((st) => {
+    const mine = rows.filter((a) => a.student_id === st.id && a.published);
+    const done = mine.filter((a) => a.st.key === 'returned');
+    const avg10 = done.length ? done.reduce((t, a) => t + (scoreOn10(a.sub.score, a.sub.max_score) || 0), 0) / done.length : null;
+    return { ...st, total: mine.length, open: mine.filter((a) => ['assigned', 'doing'].includes(a.st.key)).length, avg10 };
+  });
 
   return html`
     <div class="page-head">
       <div>
-        <h1>Tổng quan</h1>
-        <p class="page-sub">Xin chào ${profile.full_name} – đây là tình hình học tập hôm nay.</p>
+        <p class="eyebrow">${todayLabel()}</p>
+        <h1>${greeting()}, ${profile.full_name} 👋</h1>
+        <p class="page-sub">${todo.length ? `Có ${todo.length} việc đang chờ bạn xử lý.` : 'Mọi thứ đều ổn – không có việc nào đang chờ.'}</p>
       </div>
-      <button class="btn primary" disabled=${!students.length} onClick=${() => go('/bai/moi')}><${Icon} name="plus" /> Giao bài mới</button>
+      <div class="row">
+        <a class="btn" href="#/tren-lop/moi"><${Icon} name="camera" /> Kiểm tra bài trên lớp</a>
+        <button class="btn primary" disabled=${!students.length} onClick=${() => go('/bai/moi')}><${Icon} name="plus" /> Giao bài mới</button>
+      </div>
     </div>
 
     ${students.length === 0 && html`<${InviteCard} profile=${profile} first />`}
@@ -71,70 +106,109 @@ export function TeacherHome({ profile }) {
       </button>
       <a class="stat-card" href="#/tren-lop">
         <span class="stat-ico violet"><${Icon} name="camera" /></span>
-        <span class="stat-num">${data.classworkToReview}</span><span class="stat-label">Bài trên lớp chưa xem</span>
+        <span class="stat-num">${classwork.length}</span><span class="stat-label">Bài trên lớp chưa nhận xét</span>
       </a>
       <a class="stat-card" href="#/tien-do">
         <span class="stat-ico green"><${Icon} name="chart" /></span>
-        <span class="stat-num">${avg == null ? '–' : fmtNum(Math.round(avg * 10) / 10)}</span><span class="stat-label">Điểm TB (/10)</span>
+        <span class="stat-num">${avg == null ? '–' : fmtNum(Math.round(avg * 10) / 10)}</span><span class="stat-label">Điểm trung bình (/10)</span>
       </a>
     </div>
 
-    <div class="section-bar">
-      <h2>Bài tập đã giao</h2>
-    </div>
+    <div class="dash-grid">
+      <div class="dash-main">
+        <section class="card panel">
+          <div class="panel-head"><h2>Cần xử lý</h2>${todo.length > 0 && html`<span class="count-pill">${todo.length}</span>`}</div>
+          ${todo.length === 0 ? html`<div class="all-clear"><${Icon} name="check" size=${20} /> Không có việc nào đang chờ. Tuyệt vời!</div>` : html`
+            <ul class="action-list">
+              ${todo.slice(0, 6).map((t) => html`
+                <li><a href=${t.href} class="action-row">
+                  <span class=${'action-ico ' + t.tone}><${Icon} name=${t.icon} /></span>
+                  <span class="action-text"><b>${t.title}</b><small>${t.meta}</small></span>
+                  <span class="action-cta">${t.cta} <${Icon} name="chevronRight" size=${16} /></span>
+                </a></li>`)}
+            </ul>
+            ${todo.length > 6 && html`<p class="small muted panel-foot">và ${todo.length - 6} việc khác…</p>`}`}
+        </section>
 
-    <div class="chips">
-      ${FILTERS.map(([k, label, n]) => html`
-        <button class=${'chip ' + (filter === k ? 'on' : '')} onClick=${() => setFilter(k)}>${label} <small>${n}</small></button>`)}
-    </div>
+        <section class="card panel table-panel">
+          <div class="panel-head wrap">
+            <h2>Bài tập đã giao</h2>
+            <div class="search"><${Icon} name="search" size=${16} />
+              <input placeholder="Tìm bài, môn…" value=${search} onInput=${(e) => setSearch(e.target.value)} /></div>
+          </div>
+          <div class="tabs-line">
+            ${FILTERS.map(([k, label, n]) => html`
+              <button class=${'tab ' + (filter === k ? 'on' : '')} onClick=${() => setFilter(k)}>${label}<span>${n}</span></button>`)}
+          </div>
+          ${shown.length === 0 ? html`<${EmptyState} icon="clipboard" title=${rows.length ? 'Không có bài phù hợp' : 'Chưa giao bài nào'}
+              text=${rows.length ? 'Thử đổi bộ lọc hoặc từ khoá tìm kiếm.' : 'Bắt đầu bằng cách chọn bài theo SGK và để AI soạn đề.'}
+              action=${!rows.length && students.length > 0 && html`<a class="btn primary" href="#/bai/moi"><${Icon} name="plus" /> Giao bài đầu tiên</a>`} />`
+          : html`
+            <table class="table clickable-rows">
+              <thead><tr><th>Bài tập</th>${students.length > 1 && html`<th>Học sinh</th>`}<th>Hạn nộp</th><th>Trạng thái</th><th class="num">Điểm</th></tr></thead>
+              <tbody>
+                ${shown.map((a) => {
+                  const href = a.sub ? `#/cham/${a.sub.id}` : `#/bai/${a.id}`;
+                  const cd = a.due_at && ['assigned', 'doing'].includes(a.st.key) ? countdown(a.due_at) : null;
+                  return html`
+                    <tr onClick=${() => { location.hash = href.slice(1); }} tabindex="0" onKeyDown=${(e) => e.key === 'Enter' && (location.hash = href.slice(1))}>
+                      <td data-label="Bài tập"><div class="cell-title"><${SubjectIcon} subject=${a.subject} />
+                        <div><a href=${href} class="row-link">${a.title}</a><div class="small muted">${a.subject} · giao ${relTime(a.created_at)}</div></div></div></td>
+                      ${students.length > 1 && html`<td data-label="Học sinh">${names[a.student_id] || '—'}</td>`}
+                      <td data-label="Hạn nộp" class="small">${a.due_at ? html`${fmtDate(a.due_at, false)}${cd && html`<div class=${cd.late ? 'danger' : cd.soon ? 'warn' : 'muted'}>${cd.text}</div>`}` : html`<span class="muted">—</span>`}</td>
+                      <td data-label="Trạng thái"><span class=${a.st.cls}>${a.st.label}</span></td>
+                      <td data-label="Điểm" class="num">${a.st.key === 'returned' ? html`<${ScoreBadge} score=${a.sub.score} max=${a.sub.max_score} />` : html`<span class="muted">—</span>`}</td>
+                    </tr>`;
+                })}
+              </tbody>
+            </table>`}
+        </section>
+      </div>
 
-    ${shown.length === 0 && html`<div class="card center muted">Chưa có bài nào ở đây.</div>`}
-
-    <div class="list">
-      ${shown.map((a) => {
-        const s = a.submissions[0];
-        const href = s ? `#/cham/${s.id}` : `#/bai/${a.id}`;
-        const due = dueInfo(a.due_at, s && s.status !== 'in_progress');
-        return html`
-          <a class="item" href=${href}>
-            <div class="item-main">
-              <div class="item-title">${a.title}</div>
-              <div class="small muted">
-                ${a.subject}${students.length > 1 ? ` · ${names[a.student_id] || ''}` : ''}
-                ${due && html` · <span class=${due.cls}>${due.text}</span>`}
+      <aside class="dash-side">
+        <section class="card panel">
+          <div class="panel-head"><h2>Học sinh</h2><a class="link small" href="#/hoc-sinh">Quản lý</a></div>
+          ${perStudent.length === 0 ? html`<p class="muted small">Chưa có học sinh.</p>` : perStudent.map((st) => html`
+            <div class="student-row">
+              <${Avatar} name=${st.full_name} />
+              <div class="student-meta">
+                <b>${st.full_name}</b>
+                <small>${st.grade ? 'Lớp ' + st.grade + ' · ' : ''}${st.last_sign_in_at ? 'hoạt động ' + relTime(st.last_sign_in_at) : 'chưa đăng nhập'}</small>
+                <div class="student-stats">
+                  <span><b>${st.open}</b> đang làm</span><span><b>${st.total}</b> bài</span>
+                  <span>TB <b class=${st.avg10 == null ? '' : st.avg10 >= 8 ? 'good-text' : st.avg10 >= 5 ? 'warn' : 'danger'}>${st.avg10 == null ? '–' : fmtNum(Math.round(st.avg10 * 10) / 10)}</b></span>
+                </div>
               </div>
-            </div>
-            <div class="item-side">
-              ${s && s.status === 'returned' ? html`<${ScoreBadge} score=${s.score} max=${s.max_score} />` : ''}
-              <span class=${a.st.cls}>${a.st.label}</span>
-            </div>
-          </a>`;
-      })}
-    </div>
-
-    ${students.length > 0 && html`<${InviteCard} profile=${profile} students=${students} />`}`;
+            </div>`)}
+        </section>
+        ${students.length > 0 && html`<${InviteCard} profile=${profile} students=${students} />`}
+        <section class="card panel tips-card">
+          <div class="panel-head"><h2><${Icon} name="sparkles" /> Mẹo</h2></div>
+          <p class="small">Chọn <b>bài theo SGK</b> khi giao bài – AI sẽ soạn đề đúng nội dung lớp ${perStudent[0] && perStudent[0].grade ? perStudent[0].grade : '6'} chỉ trong vài giây.</p>
+        </section>
+      </aside>
+    </div>`;
 }
 
 function InviteCard({ profile, first, students = [] }) {
-  const [copied, setCopied] = useState(false);
   const appUrl = location.origin + location.pathname;
   const message = `Em mở ${appUrl} → chọn "Tạo tài khoản" → "Học sinh", rồi nhập mã mời: ${profile.invite_code}`;
   async function copy() {
-    try { await navigator.clipboard.writeText(message); setCopied(true); setTimeout(() => setCopied(false), 2000); }
-    catch { prompt('Sao chép tin nhắn này:', message); }
+    try { await navigator.clipboard.writeText(message); toast('Đã chép tin nhắn mời – dán vào Zalo để gửi cho em.'); }
+    catch { toast('Không chép được tự động. Mã mời: ' + profile.invite_code, 'error'); }
   }
   return html`
-    <div class=${'card invite ' + (first ? 'highlight' : '')}>
+    <section class=${'card panel invite ' + (first ? 'highlight' : '')}>
       ${first
         ? html`<h2>Bước đầu tiên: mời em vào app</h2>
-               <p>Gửi tin nhắn dưới đây cho em qua Zalo/Messenger. Em tạo tài khoản xong là bạn giao bài được ngay.</p>`
-        : html`<div class="small muted">Học sinh: ${students.map((s) => s.full_name).join(', ')} · Mã mời của bạn:</div>`}
-      <div class="row wrap-row">
+               <p>Gửi tin nhắn mời cho em qua Zalo/Messenger. Em tạo tài khoản xong là bạn giao bài được ngay.</p>`
+        : html`<div class="panel-head"><h2>Mã mời học sinh</h2></div>`}
+      <div class="invite-row">
         <span class="code">${profile.invite_code}</span>
-        <button class="btn" onClick=${copy}>${copied ? '✔ Đã chép' : 'Chép tin nhắn mời'}</button>
+        <button class="btn" onClick=${copy}><${Icon} name="send" /> Chép tin nhắn mời</button>
       </div>
       ${first && html`<p class="small muted">${message}</p>`}
-    </div>`;
+    </section>`;
 }
 
 // =====================================================================
@@ -266,28 +340,41 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
         }
       });
       await rpc('save_assignment', { p: payload });
+      toast(published ? `Đã giao bài "${form.title}" cho em.` : 'Đã lưu nháp.');
       go('/');
     } catch (e) {
       setSaveErr(e.message);
+      toast(e.message, 'error');
       setSaving(false);
     }
   }
 
   async function remove() {
-    if (!confirm('Xoá bài tập này? Bài làm của em (nếu có) cũng bị xoá.')) return;
+    const ok = await confirmDialog({ title: 'Xoá bài tập?', danger: true, confirmText: 'Xoá bài tập',
+      message: `"${form.title}" sẽ bị xoá vĩnh viễn.\nBài làm và điểm của em (nếu có) cũng bị xoá.` });
+    if (!ok) return;
     try {
       await q(sb.from('assignments').delete().eq('id', id));
+      toast('Đã xoá bài tập.');
       go('/');
     } catch (e) { setSaveErr(e.message); }
   }
 
+  const byType = form.questions.reduce((c, x) => ((c[x.type] = (c[x.type] || 0) + 1), c), {});
+  const autoCount = (byType.mcq || 0) + (byType.short || 0);
+  const student = data.students.find((s) => s.id === form.student_id);
+  const emptyQs = form.questions.filter((x) => !x.prompt.trim()).length;
+
   return html`
     <${Back} />
     <div class="page-head">
-      <h1>${id ? 'Sửa bài tập' : copyFrom ? 'Nhân bản bài tập' : 'Giao bài mới'}</h1>
+      <div>
+        <p class="eyebrow">${id ? (form.published ? 'Đã giao' : 'Bản nháp') : 'Bài tập mới'}</p>
+        <h1>${id ? 'Sửa bài tập' : copyFrom ? 'Nhân bản bài tập' : 'Giao bài mới'}</h1>
+      </div>
       ${id && html`<div class="row">
-        <button class="btn" onClick=${() => go('/nhan-ban/' + id)}>Nhân bản</button>
-        <button class="btn danger-outline" onClick=${remove}>Xoá</button>
+        <button class="btn" onClick=${() => go('/nhan-ban/' + id)}><${Icon} name="file" /> Nhân bản</button>
+        <button class="btn danger-outline" onClick=${remove}><${Icon} name="trash" /> Xoá</button>
       </div>`}
     </div>
 
@@ -296,6 +383,8 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
       <a href=${'#/cham/' + data.subs[0].id}>Xem bài làm</a> hoặc bấm <b>Nhân bản</b> để tạo bài mới từ bài này.
     </div>`}
 
+    <div class="layout-aside">
+    <div class="layout-main">
     <fieldset disabled=${locked}>
       <div class="card">
         <div class="card-title"><${Icon} name="book" /> Chọn bài theo sách giáo khoa <span class="muted small">(không bắt buộc)</span></div>
@@ -352,10 +441,37 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
         onAdd=${(items) => addQ(items.map(fromGenerated))} />
       <${MathGenerator} onAdd=${(items) => addQ(items.map(fromGenerated))} />
     </fieldset>
+    </div>
 
-    <${ErrorBox} msg=${saveErr} />
+    <aside class="layout-side">
+      <div class="card sticky-panel">
+        <div class="panel-head"><h2>Tóm tắt</h2>${form.subject && html`<${SubjectChip} subject=${form.subject} short />`}</div>
+        <dl class="summary-list">
+          <div><dt>Giao cho</dt><dd>${student ? student.full_name : '—'}</dd></div>
+          <div><dt>Hạn nộp</dt><dd>${form.due_at ? fmtDate(new Date(form.due_at).toISOString()) : 'Không giới hạn'}</dd></div>
+          <div><dt>Số câu</dt><dd>${form.questions.length}</dd></div>
+          <div><dt>Tổng điểm</dt><dd>${fmtNum(totalPoints)}</dd></div>
+        </dl>
+        <div class="type-bars">
+          ${Object.entries(TYPE_LABEL).filter(([t]) => byType[t]).map(([t, l]) => html`
+            <div class="type-bar"><span>${l}</span><b>${byType[t]}</b></div>`)}
+        </div>
+        <p class="small muted">${autoCount} câu được <b>chấm tự động</b>${form.questions.length - autoCount ? `, ${form.questions.length - autoCount} câu bạn chấm (có AI gợi ý)` : ''}.</p>
+        ${emptyQs > 0 && html`<div class="alert warn small">${emptyQs} câu chưa có nội dung.</div>`}
+        <${ErrorBox} msg=${saveErr} />
+        ${!locked && html`
+          <div class="stack-sm">
+            <button class="btn primary full lg" disabled=${saving} onClick=${() => save(true)}>
+              ${saving ? html`<span class="btn-spin"></span> Đang lưu…` : html`<${Icon} name="send" /> ${form.published ? 'Lưu thay đổi' : 'Giao bài cho em'}`}
+            </button>
+            <button class="btn full" disabled=${saving} onClick=${() => save(false)}>Lưu nháp</button>
+          </div>`}
+      </div>
+    </aside>
+    </div>
+
     ${!locked && html`
-      <div class="save-bar">
+      <div class="save-bar mobile-only">
         <button class="btn" disabled=${saving} onClick=${() => save(false)}>Lưu nháp</button>
         <button class="btn primary" disabled=${saving} onClick=${() => save(true)}>
           ${saving ? 'Đang lưu…' : form.published ? 'Lưu thay đổi' : 'Giao bài cho em'}
@@ -593,87 +709,107 @@ export function GradeSubmission({ id }) {
         p_grades: qs.map((x) => ({ question_id: x.id, points: grades[x.id].points, feedback: grades[x.id].feedback })),
         p_comment: comment,
       });
-      setMsg('✔ Đã trả bài cho em.');
+      toast(s.status === 'returned' ? 'Đã cập nhật điểm.' : `Đã trả bài cho ${student.full_name}.`);
       reload();
-    } catch (e) { setSaveErr(e.message); }
+    } catch (e) { setSaveErr(e.message); toast(e.message, 'error'); }
     setBusy(false);
   }
+
+  const graded = qs.length - missing;
+  const late = a.due_at && s.submitted_at && new Date(s.submitted_at) > new Date(a.due_at);
+  const jump = (i) => { const el = document.getElementById('q-' + i); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
   return html`
     <${Back} />
     <div class="page-head">
       <div>
+        <p class="eyebrow"><${SubjectChip} subject=${a.subject} /></p>
         <h1>${a.title}</h1>
-        <div class="muted small">${a.subject} · ${student.full_name}
-          ${s.submitted_at && ` · nộp ${fmtDate(s.submitted_at)}`}
-          ${a.due_at && s.submitted_at && new Date(s.submitted_at) > new Date(a.due_at) && html` · <span class="danger">nộp muộn</span>`}
+        <div class="meta-line">
+          <span><${Avatar} name=${student.full_name} size="xs" /> ${student.full_name}</span>
+          ${s.submitted_at && html`<span><${Icon} name="clock" size=${15} /> Nộp ${fmtDate(s.submitted_at)}</span>`}
+          ${late && html`<span class="tag red">Nộp muộn</span>`}
+          <span class=${statusOf({ published: true, submissions: [s] }).cls}>${statusOf({ published: true, submissions: [s] }).label}</span>
         </div>
       </div>
-      <a class="btn" href=${'#/bai/' + a.id}>Xem đề</a>
+      <a class="btn" href=${'#/bai/' + a.id}><${Icon} name="file" /> Xem đề</a>
     </div>
 
     ${s.status === 'in_progress' && html`<div class="alert warn">Em đang làm, chưa nộp. Dưới đây là phần em đã làm tới giờ.</div>`}
-    ${s.status === 'returned' && html`<div class="alert ok">Đã trả bài lúc ${fmtDate(s.returned_at)}. Bạn vẫn có thể sửa điểm rồi bấm "Cập nhật".</div>`}
 
-    ${s.status !== 'in_progress' && qs.some((x) => x.type === 'essay' || x.type === 'photo' || x.type === 'short') && html`
-      <div class="card ai-bar">
-        <button class="btn primary" disabled=${aiBusy} onClick=${aiGrade}>
-          ${aiBusy ? 'AI đang chấm… (khoảng 10–40 giây)' : '✨ AI gợi ý chấm'}
-        </button>
-        <span class="small muted">AI đọc bài tự luận, ảnh chụp và câu điền bị máy chấm sai, rồi điền sẵn điểm + nhận xét để bạn duyệt.</span>
-        <${ErrorBox} msg=${aiErr} />
-        ${aiMsg && html`<div class="alert ok">${aiMsg}</div>`}
-      </div>`}
+    <div class="layout-aside">
+      <div class="layout-main">
+        ${qs.map((x, i) => {
+          const ans = byQ[x.id];
+          const k = keyOf(x);
+          const g = grades[x.id] || { points: '', feedback: '' };
+          const manual = x.type === 'essay' || x.type === 'photo';
+          return html`
+            <div id=${'q-' + i} class=${'card qcard ' + (ans && ans.is_correct === true ? 'right' : ans && ans.is_correct === false ? 'wrong' : '')}>
+              <div class="qhead">
+                <span class="q-num">${i + 1}</span><span class="tag gray">${TYPE_LABEL[x.type]}</span>
+                ${aiInfo[x.id] && html`<span class=${'tag ' + (aiInfo[x.id] === 'thấp' ? 'orange' : 'blue')}>
+                  ${aiInfo[x.id] === 'thấp' ? '⚠ AI không chắc' : '✨ AI gợi ý'}</span>`}
+                <span class="spacer"></span><span class="muted small">${fmtNum(x.points)} điểm</span>
+              </div>
+              <div class="prompt">${nl2br(x.prompt)}</div>
+              <${AnswerView} q=${x} ans=${ans} k=${k} urls=${urls} showKey />
+              <div class="grade-row">
+                <div class="score-input">
+                  <input type="number" class="num" min="0" max=${x.points} step="0.25" value=${g.points} aria-label=${'Điểm câu ' + (i + 1)}
+                         disabled=${s.status === 'in_progress'} onInput=${(e) => setG(x.id, { points: e.target.value })} />
+                  <span>/ ${fmtNum(x.points)}</span>
+                </div>
+                ${s.status !== 'in_progress' && html`
+                  <div class="seg">
+                    <button class=${Number(g.points) === Number(x.points) && g.points !== '' ? 'on good' : ''} onClick=${() => setG(x.id, { points: String(Number(x.points)) })}><${Icon} name="check" size=${15} /> Đúng</button>
+                    <button class=${g.points === '0' ? 'on bad' : ''} onClick=${() => setG(x.id, { points: '0' })}><${Icon} name="x" size=${15} /> Sai</button>
+                  </div>`}
+                ${!manual && ans && ans.is_correct != null && html`<span class="muted small">Máy chấm: ${ans.is_correct ? 'đúng' : 'sai'}</span>`}
+              </div>
+              <input class="feedback" placeholder="Nhận xét cho câu này (không bắt buộc)" value=${g.feedback}
+                     disabled=${s.status === 'in_progress'} onInput=${(e) => setG(x.id, { feedback: e.target.value })} />
+            </div>`;
+        })}
+      </div>
 
-    ${qs.map((x, i) => {
-      const ans = byQ[x.id];
-      const k = keyOf(x);
-      const g = grades[x.id] || { points: '', feedback: '' };
-      const manual = x.type === 'essay' || x.type === 'photo';
-      return html`
-        <div class=${'card qcard ' + (ans && ans.is_correct === true ? 'right' : ans && ans.is_correct === false ? 'wrong' : '')}>
-          <div class="qhead">
-            <b>Câu ${i + 1}</b><span class="tag gray">${TYPE_LABEL[x.type]}</span>
-            <span class="spacer"></span><span class="muted small">${fmtNum(x.points)} điểm</span>
+      <aside class="layout-side">
+        <div class="card sticky-panel">
+          <div class="score-hero">
+            <${ProgressRing} value=${max ? total / max : 0} label=${max ? fmtNum(scoreOn10(total, max)) : '–'} sub="/10" />
+            <div>
+              <div class="big-total">${fmtNum(total)} <small>/ ${fmtNum(max)} điểm</small></div>
+              <div class="small muted">Đã cho điểm ${graded}/${qs.length} câu</div>
+            </div>
           </div>
-          <div class="prompt">${nl2br(x.prompt)}</div>
-          <${AnswerView} q=${x} ans=${ans} k=${k} urls=${urls} showKey />
-          <div class="grade-row">
-            <label class="inline">Điểm
-              <input type="number" class="num" min="0" max=${x.points} step="0.25" value=${g.points}
-                     disabled=${s.status === 'in_progress'} onInput=${(e) => setG(x.id, { points: e.target.value })} />
-              / ${fmtNum(x.points)}
+          <div class="q-nav" aria-label="Đi tới câu">
+            ${qs.map((x, i) => {
+              const g = grades[x.id] || {}; const has = g.points !== '' && g.points != null;
+              const full = has && Number(g.points) >= Number(x.points);
+              return html`<button class=${'q-dot ' + (!has ? '' : full ? 'good' : Number(g.points) === 0 ? 'bad' : 'mid')} onClick=${() => jump(i)} title=${'Câu ' + (i + 1)}>${i + 1}</button>`;
+            })}
+          </div>
+          ${s.status !== 'in_progress' && html`
+            ${qs.some((x) => x.type === 'essay' || x.type === 'photo' || x.type === 'short') && html`
+              <button class="btn ai-btn full" disabled=${aiBusy} onClick=${aiGrade}>
+                ${aiBusy ? html`<span class="btn-spin"></span> AI đang chấm…` : html`<${Icon} name="sparkles" /> AI gợi ý chấm`}
+              </button>`}
+            <${ErrorBox} msg=${aiErr} />
+            ${aiMsg && html`<div class="alert ok small">${aiMsg}</div>`}
+            <label>Nhận xét chung
+              <textarea rows="3" value=${comment} onInput=${(e) => setComment(e.target.value)} placeholder="VD: Em làm tốt lắm, nhớ cẩn thận phần đặt tính nhé!"></textarea>
             </label>
-            ${s.status !== 'in_progress' && html`
-              <button class="btn small" onClick=${() => setG(x.id, { points: String(Number(x.points)) })}>Đúng</button>
-              <button class="btn small" onClick=${() => setG(x.id, { points: '0' })}>Sai</button>`}
-            ${!manual && ans && ans.is_correct != null && html`<span class="muted small">(máy chấm: ${ans.is_correct ? 'đúng' : 'sai'})</span>`}
-            ${aiInfo[x.id] && html`<span class=${'tag ' + (aiInfo[x.id] === 'thấp' ? 'orange' : 'blue')}>
-              ${aiInfo[x.id] === 'thấp' ? '⚠ AI không chắc' : '✨ AI gợi ý'}</span>`}
-          </div>
-          <input class="feedback" placeholder="Nhận xét cho câu này (không bắt buộc)" value=${g.feedback}
-                 disabled=${s.status === 'in_progress'} onInput=${(e) => setG(x.id, { feedback: e.target.value })} />
-        </div>`;
-    })}
-
-    ${s.status !== 'in_progress' && html`
-      <div class="card">
-        <label>Lời nhận xét chung
-          <textarea rows="3" value=${comment} onInput=${(e) => setComment(e.target.value)} placeholder="VD: Em làm tốt lắm, nhớ cẩn thận phần đặt tính nhé!"></textarea>
-        </label>
-        <div class="total">Tổng: <b>${fmtNum(total)} / ${fmtNum(max)}</b>
-          ${max > 0 && html` = <b>${fmtNum(scoreOn10(total, max))}/10</b>`}
-          ${missing > 0 && html` · <span class="warn">còn ${missing} câu chưa cho điểm</span>`}
+            ${missing > 0 && html`<p class="small warn">Còn ${missing} câu chưa cho điểm.</p>`}
+            <${ErrorBox} msg=${saveErr} />
+            <button class="btn primary full lg" disabled=${busy || missing > 0} onClick=${submit}>
+              ${busy ? html`<span class="btn-spin"></span> Đang lưu…` : html`<${Icon} name="send" /> ${s.status === 'returned' ? 'Cập nhật điểm' : 'Trả bài cho em'}`}
+            </button>
+            ${s.status === 'returned' && html`<p class="small muted center">Đã trả bài ${relTime(s.returned_at)}.</p>`}`}
         </div>
-        <${ErrorBox} msg=${saveErr} />
-        ${msg && html`<div class="alert ok">${msg}</div>`}
-        <button class="btn primary full" disabled=${busy || missing > 0} onClick=${submit}>
-          ${busy ? 'Đang lưu…' : s.status === 'returned' ? 'Cập nhật điểm' : 'Trả bài cho em'}
-        </button>
-      </div>`}`;
+      </aside>
+    </div>`;
 }
 
-// Hiển thị câu trả lời của em (dùng chung cho trang chấm và trang kết quả của em)
 export function AnswerView({ q: x, ans, k, urls, showKey }) {
   const text = ans ? ans.answer_text : '';
   const imgs = ans ? ans.image_paths : [];
@@ -873,7 +1009,7 @@ export function StudentsPage({ profile }) {
 
   async function changeGrade(s, g) {
     setMsg('');
-    try { await rpc('set_student_grade', { p_student: s.id, p_grade: g ? Number(g) : null }); setMsg(`✔ Đã cập nhật lớp của ${s.full_name}.`); reload(); }
+    try { await rpc('set_student_grade', { p_student: s.id, p_grade: g ? Number(g) : null }); toast(`Đã cập nhật lớp của ${s.full_name}.`); reload(); }
     catch (e) { setMsg(e.message); }
   }
 

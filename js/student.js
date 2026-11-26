@@ -2,6 +2,7 @@ import { html, useState, useRef, useEffect } from './lib.js';
 import { sb, q, rpc, signedUrls, BUCKET } from './db.js';
 import {
   useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, fmtDate, fmtNum, dueInfo, ScoreBadge, scoreOn10, nl2br, Icon,
+  toast, confirmDialog, EmptyState, SubjectChip, subjectTone, ProgressRing, relTime, countdown,
 } from './ui.js';
 import { AnswerView, keyOf } from './teacher.js';
 import { compressImage } from './image.js';
@@ -28,43 +29,62 @@ export function StudentHome({ profile }) {
   const t = (a) => (a.due_at ? new Date(a.due_at).getTime() : Infinity);
   todo.sort((a, b) => t(a) - t(b));
 
-  const Item = ({ a }) => {
+  const doneAvg = done.length ? done.reduce((t, a) => t + (scoreOn10(a.submissions[0].score, a.submissions[0].max_score) || 0), 0) / done.length : null;
+  const finished = waiting.length + done.length;
+
+  const Card = ({ a }) => {
     const s = a.submissions[0];
-    const href = !s || s.status === 'in_progress' ? `#/lam/${a.id}` : `#/ket-qua/${s.id}`;
-    const due = dueInfo(a.due_at, s && s.status !== 'in_progress');
+    const open = !s || s.status === 'in_progress';
+    const href = open ? `#/lam/${a.id}` : `#/ket-qua/${s.id}`;
+    const cd = open && a.due_at ? countdown(a.due_at) : null;
     return html`
-      <a class="item" href=${href}>
-        <div class="item-main">
-          <div class="item-title">${a.title}</div>
-          <div class="small muted">${a.subject}${due ? html` · <span class=${due.cls}>${due.text}</span>` : ''}</div>
-        </div>
-        <div class="item-side">
+      <a class=${'task-card tone-' + subjectTone(a.subject)} href=${href}>
+        <div class="task-top"><${SubjectChip} subject=${a.subject} short />
+          ${cd && html`<span class=${'due-pill ' + (cd.late ? 'late' : cd.soon ? 'soon' : '')}><${Icon} name="clock" size=${13} /> ${cd.text}</span>`}
+          ${s && s.status === 'submitted' && html`<span class="tag orange">Chờ chấm</span>`}
           ${s && s.status === 'returned' && html`<${ScoreBadge} score=${s.score} max=${s.max_score} />`}
-          ${(!s || s.status === 'in_progress') && html`<span class="btn small primary">${s ? 'Làm tiếp' : 'Làm bài'}</span>`}
+        </div>
+        <div class="task-title">${a.title}</div>
+        <div class="task-foot">
+          <span class="small muted">Giao ${relTime(a.created_at)}</span>
+          ${open ? html`<span class="btn sm primary">${s ? 'Làm tiếp' : 'Làm bài'} <${Icon} name="arrowRight" size=${15} /></span>`
+            : html`<span class="link small">Xem kết quả <${Icon} name="chevronRight" size=${14} /></span>`}
         </div>
       </a>`;
   };
 
   return html`
-    <div class="page-head">
-      <div>
+    <section class="hero-card">
+      <div class="hero-text">
+        <p class="eyebrow light">${new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p>
         <h1>Chào ${profile.full_name}! 👋</h1>
-        <p class="page-sub">${todo.length ? `Em có ${todo.length} bài cần làm.` : 'Em đã làm hết bài được giao.'}</p>
+        <p>${todo.length ? `Hôm nay em có ${todo.length} bài cần làm. Cố lên nhé!` : 'Em đã làm hết bài được giao – giỏi quá! 🎉'}</p>
+        <div class="row wrap-row">
+          ${todo[0] && html`<a class="btn white" href=${'#/lam/' + todo[0].id}><${Icon} name="arrowRight" /> Làm bài tiếp theo</a>`}
+          <a class="btn glass" href="#/tren-lop/moi"><${Icon} name="camera" /> Kiểm tra bài trên lớp</a>
+        </div>
       </div>
-      <a class="btn" href="#/tren-lop/moi"><${Icon} name="camera" /> Kiểm tra bài trên lớp</a>
-    </div>
-    <h2 class="section-title">Bài cần làm <small class="muted">(${todo.length})</small></h2>
+      <div class="hero-stats">
+        <${ProgressRing} value=${list.length ? finished / list.length : 0} label=${`${finished}/${list.length}`} sub="đã nộp" size=${104} />
+        <div class="hero-mini">
+          <div><b>${done.length}</b><span>bài có điểm</span></div>
+          <div><b>${doneAvg == null ? '–' : fmtNum(Math.round(doneAvg * 10) / 10)}</b><span>điểm TB</span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-bar"><h2>Bài cần làm <span class="count-pill">${todo.length}</span></h2></div>
     ${todo.length === 0
-      ? html`<div class="card center">🎉 Em đã làm hết bài rồi!</div>`
-      : html`<div class="list">${todo.map((a) => html`<${Item} a=${a} />`)}</div>`}
+      ? html`<${EmptyState} icon="check" title="Em đã làm hết bài rồi!" text="Khi có bài mới, bài sẽ hiện ở đây." />`
+      : html`<div class="task-grid">${todo.map((a) => html`<${Card} a=${a} />`)}</div>`}
 
     ${waiting.length > 0 && html`
-      <h2 class="section-title">Đã nộp – chờ chấm <small class="muted">(${waiting.length})</small></h2>
-      <div class="list">${waiting.map((a) => html`<${Item} a=${a} />`)}</div>`}
+      <div class="section-bar"><h2>Đã nộp – chờ chấm <span class="count-pill">${waiting.length}</span></h2></div>
+      <div class="task-grid">${waiting.map((a) => html`<${Card} a=${a} />`)}</div>`}
 
     ${done.length > 0 && html`
-      <h2 class="section-title">Đã có điểm <small class="muted">(${done.length})</small></h2>
-      <div class="list">${done.map((a) => html`<${Item} a=${a} />`)}</div>`}`;
+      <div class="section-bar"><h2>Đã có điểm <span class="count-pill">${done.length}</span></h2></div>
+      <div class="task-grid">${done.map((a) => html`<${Card} a=${a} />`)}</div>`}`;
 }
 
 // =====================================================================
@@ -166,7 +186,7 @@ export function DoAssignment({ profile, assignmentId }) {
     const msg = left > 0
       ? `Em còn ${left} câu chưa làm. Vẫn nộp bài chứ? Nộp rồi sẽ không sửa được nữa.`
       : 'Em chắc chắn muốn nộp bài? Nộp rồi sẽ không sửa được nữa.';
-    if (!confirm(msg)) return;
+    if (!(await confirmDialog({ title: 'Nộp bài?', message: msg, confirmText: 'Nộp bài', danger: left > 0 }))) return;
     setSubmitting(true); setActionErr('');
     try {
       await Promise.all([...dirty.current].map((qid) => flush(qid)));
@@ -190,17 +210,23 @@ export function DoAssignment({ profile, assignmentId }) {
     </div>
 
     <div class="progress-sticky">
-      <div class="progress-track"><div class="progress-fill" style=${`width:${(answeredCount / qs.length) * 100}%`}></div></div>
-      <span class="small">Đã làm ${answeredCount}/${qs.length} câu</span>
+      <div class="progress-row">
+        <div class="progress-track"><div class="progress-fill" style=${`width:${(answeredCount / qs.length) * 100}%`}></div></div>
+        <span class="small"><b>${answeredCount}</b>/${qs.length} câu</span>
+      </div>
+      <div class="q-nav compact" aria-label="Đi tới câu">
+        ${qs.map((x, i) => html`<button class=${'q-dot ' + (isAnswered(x) ? 'done' : '')} title=${'Câu ' + (i + 1)}
+          onClick=${() => { const el = document.getElementById('q-' + i); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>${i + 1}</button>`)}
+      </div>
     </div>
 
     ${qs.map((x, i) => {
       const v = answers[x.id] || { text: '', images: [] };
       const st = status[x.id];
       return html`
-        <div class=${'card qcard ' + (isAnswered(x) ? 'answered' : '')}>
+        <div id=${'q-' + i} class=${'card qcard ' + (isAnswered(x) ? 'answered' : '')}>
           <div class="qhead">
-            <b>Câu ${i + 1}</b><span class="tag gray">${TYPE_LABEL[x.type]}</span>
+            <span class="q-num">${i + 1}</span><span class="tag gray">${TYPE_LABEL[x.type]}</span>
             <span class="spacer"></span>
             <span class="small muted">${st === 'saving' ? 'Đang lưu…' : st === 'saved' ? '✔ Đã lưu' : st === 'error' ? html`<span class="danger">Chưa lưu được</span>` : ''}</span>
             <span class="small muted">${fmtNum(x.points)} điểm</span>
@@ -246,7 +272,7 @@ export function DoAssignment({ profile, assignmentId }) {
     <${ErrorBox} msg=${actionErr} />
     <div class="save-bar">
       <button class="btn primary big" disabled=${submitting || busyUploading} onClick=${submit}>
-        ${submitting ? 'Đang nộp…' : busyUploading ? 'Đợi ảnh tải xong…' : '📤 Nộp bài'}
+        ${submitting ? html`<span class="btn-spin"></span> Đang nộp…` : busyUploading ? 'Đợi ảnh tải xong…' : html`<${Icon} name="send" /> Nộp bài`}
       </button>
     </div>`;
 }

@@ -12,6 +12,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap">
+  <!-- Áp dụng giao diện sáng/tối trước khi vẽ trang (tránh nháy màn hình) -->
+  <script>
+    (function () {
+      var m = localStorage.getItem('theme') || 'system';
+      var dark = m === 'dark' || (m === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    })();
+  </script>
   <!-- Luôn tải CSS mới nhất (tránh trình duyệt giữ bản cũ sau khi cập nhật) -->
   <script>document.write('<link rel="stylesheet" href="css/style.css?v=' + Date.now() + '">');</script>
   <noscript><link rel="stylesheet" href="css/style.css"></noscript>

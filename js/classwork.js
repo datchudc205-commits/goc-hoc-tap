@@ -1,7 +1,7 @@
 // Kiểm tra bài làm TRÊN LỚP: chụp ảnh vở → AI kiểm tra từng bài → người giao bài nhận xét
 import { html, useState, useEffect, useRef } from './lib.js';
 import { sb, q, rpc, ai, signedUrls, BUCKET } from './db.js';
-import { useLoad, Loading, ErrorBox, Back, go, fmtDate, fmtNum, Icon, LessonPicker, SUBJECTS, nl2br } from './ui.js';
+import { useLoad, Loading, ErrorBox, Back, go, fmtDate, fmtNum, Icon, LessonPicker, SUBJECTS, nl2br, confirmDialog, toast, EmptyState, SubjectChip, SubjectIcon, relTime } from './ui.js';
 import { compressImage } from './image.js';
 
 const VERDICT = {
@@ -59,10 +59,10 @@ export function ClassworkList({ profile }) {
       <div class="list">
         ${items.map((c) => html`
           <a class="item" href=${'#/tren-lop/' + c.id}>
-            <span class="item-ico"><${Icon} name="camera" /></span>
+            <${SubjectIcon} subject=${c.subject} />
             <div class="item-main">
               <div class="item-title">${c.subject}${c.lesson ? ' · ' + c.lesson : ''}</div>
-              <div class="small muted">${isTeacher && data.students.length > 1 ? names[c.student_id] + ' · ' : ''}${fmtDate(c.created_at)} · ${c.image_paths.length} ảnh</div>
+              <div class="small muted">${isTeacher && data.students.length > 1 ? names[c.student_id] + ' · ' : ''}${relTime(c.created_at)} · ${c.image_paths.length} ảnh</div>
             </div>
             <div class="item-side">
               ${c.status === 'checked' && c.score != null && html`<span class=${'score ' + scoreCls(Number(c.score))}>${fmtNum(c.score)}<small>/10</small></span>`}
@@ -212,11 +212,11 @@ export function ClassworkDetail({ id, profile }) {
 
   async function saveComment() {
     setMsg('');
-    try { await rpc('review_classwork', { p_id: id, p_comment: comment }); setMsg('✔ Đã lưu nhận xét.'); reload(); }
+    try { await rpc('review_classwork', { p_id: id, p_comment: comment }); toast('Đã lưu nhận xét.'); reload(); }
     catch (e) { setMsg(e.message); }
   }
   async function remove() {
-    if (!confirm('Xoá bài kiểm tra này?')) return;
+    if (!(await confirmDialog({ title: 'Xoá bài kiểm tra?', danger: true, confirmText: 'Xoá', message: 'Ảnh và kết quả AI của bài này sẽ bị xoá.' }))) return;
     try {
       await rpc('delete_classwork', { p_id: id });
       sb.storage.from(BUCKET).remove(c.image_paths);

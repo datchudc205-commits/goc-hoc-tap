@@ -86,7 +86,138 @@ export function useLoad(fn, deps = []) {
 }
 
 // ---------- Thành phần dùng chung ----------
-export const Loading = ({ text = 'Đang tải…' }) => html`<div class="center muted pad">${text}</div>`;
+// Khung xương (skeleton) thay cho chữ "Đang tải…"
+export const Loading = ({ rows = 3 }) => html`
+  <div class="skeleton-page" aria-busy="true" aria-label="Đang tải">
+    <div class="sk sk-title"></div>
+    <div class="sk sk-sub"></div>
+    ${Array.from({ length: rows }, () => html`<div class="sk sk-card"></div>`)}
+  </div>`;
+
+// ---------- Thông báo nổi (toast) ----------
+let toastListeners = [];
+let toastSeq = 0;
+export function toast(message, type = 'ok') {
+  const t = { id: ++toastSeq, message, type };
+  toastListeners.forEach((f) => f(t));
+}
+export function Toaster() {
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    const f = (t) => {
+      setItems((x) => [...x, t]);
+      setTimeout(() => setItems((x) => x.filter((i) => i.id !== t.id)), 3800);
+    };
+    toastListeners.push(f);
+    return () => { toastListeners = toastListeners.filter((g) => g !== f); };
+  }, []);
+  return html`<div class="toaster" role="status" aria-live="polite">
+    ${items.map((t) => html`<div class=${'toast ' + t.type} key=${t.id}>
+      <${Icon} name=${t.type === 'error' ? 'alert' : 'check'} /><span>${t.message}</span></div>`)}
+  </div>`;
+}
+
+// ---------- Hộp xác nhận (thay cho confirm() của trình duyệt) ----------
+let dialogOpen = null;
+export function confirmDialog({ title = 'Xác nhận', message = '', confirmText = 'Đồng ý', cancelText = 'Huỷ', danger = false }) {
+  return new Promise((resolve) => dialogOpen && dialogOpen({ title, message, confirmText, cancelText, danger, resolve }));
+}
+export function DialogHost() {
+  const [d, setD] = useState(null);
+  useEffect(() => { dialogOpen = setD; return () => { dialogOpen = null; }; }, []);
+  if (!d) return null;
+  const close = (v) => { d.resolve(v); setD(null); };
+  return html`
+    <${Modal} title=${d.title} onClose=${() => close(false)}
+      footer=${html`<button class="btn" onClick=${() => close(false)}>${d.cancelText}</button>
+        <button class=${'btn ' + (d.danger ? 'danger' : 'primary')} onClick=${() => close(true)} autofocus>${d.confirmText}</button>`}>
+      <div class="confirm-body">
+        ${d.danger && html`<span class="confirm-ico"><${Icon} name="alert" size=${22} /></span>`}
+        <p>${nl2br(d.message)}</p>
+      </div>
+    </${Modal}>`;
+}
+
+// ---------- Trạng thái trống ----------
+export const EmptyState = ({ icon = 'book', title, text, action }) => html`
+  <div class="empty">
+    <div class="empty-ico"><${Icon} name=${icon} size=${26} /></div>
+    <h3>${title}</h3>
+    ${text && html`<p class="muted">${text}</p>`}
+    ${action && html`<div class="empty-action">${action}</div>`}
+  </div>`;
+
+// ---------- Màu theo môn học ----------
+const SUBJECT_TONES = {
+  'Toán': 'blue', 'Ngữ văn': 'rose', 'Tiếng Việt': 'rose', 'Tiếng Anh': 'violet', 'Khoa học tự nhiên': 'green',
+  'Lịch sử và Địa lí': 'amber', 'Giáo dục công dân': 'teal', 'Tin học': 'indigo', 'Công nghệ': 'orange',
+};
+export const subjectTone = (s) => SUBJECT_TONES[s] || 'slate';
+const SUBJECT_SHORT = { 'Khoa học tự nhiên': 'KHTN', 'Lịch sử và Địa lí': 'LS & ĐL', 'Giáo dục công dân': 'GDCD',
+  'Hoạt động trải nghiệm, hướng nghiệp': 'HĐTN' };
+export const SubjectChip = ({ subject, short }) => html`
+  <span class=${'subject-chip tone-' + subjectTone(subject)}><i></i>${short ? SUBJECT_SHORT[subject] || subject : subject}</span>`;
+export const SubjectIcon = ({ subject }) => html`
+  <span class=${'subject-icon tone-' + subjectTone(subject)}>${(SUBJECT_SHORT[subject] || subject || '?').slice(0, 2)}</span>`;
+
+// ---------- Vòng tiến độ ----------
+export function ProgressRing({ value = 0, size = 88, stroke = 9, label, sub }) {
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, v = Math.max(0, Math.min(1, value));
+  return html`
+    <div class="ring" style=${`width:${size}px;height:${size}px`}>
+      <svg width=${size} height=${size} viewBox=${`0 0 ${size} ${size}`} aria-hidden="true">
+        <circle cx=${size / 2} cy=${size / 2} r=${r} class="ring-track" stroke-width=${stroke} fill="none" />
+        <circle cx=${size / 2} cy=${size / 2} r=${r} class="ring-bar" stroke-width=${stroke} fill="none"
+          stroke-dasharray=${c} stroke-dashoffset=${c * (1 - v)} transform=${`rotate(-90 ${size / 2} ${size / 2})`} stroke-linecap="round" />
+      </svg>
+      <div class="ring-label"><b>${label}</b>${sub && html`<small>${sub}</small>`}</div>
+    </div>`;
+}
+
+export const Avatar = ({ name = '', size = '' }) => html`
+  <span class=${'avatar ' + size} aria-hidden="true">${name.trim().split(/\s+/).slice(-2).map((w) => w[0]).join('').toUpperCase() || '?'}</span>`;
+
+// "5 phút trước", "2 ngày trước"
+export function relTime(iso) {
+  if (!iso) return '';
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return 'vừa xong';
+  if (s < 3600) return `${Math.floor(s / 60)} phút trước`;
+  if (s < 86400) return `${Math.floor(s / 3600)} giờ trước`;
+  if (s < 86400 * 7) return `${Math.floor(s / 86400)} ngày trước`;
+  return fmtDate(iso, false);
+}
+
+// "còn 2 ngày", "quá hạn 3 giờ"
+export function countdown(iso) {
+  if (!iso) return null;
+  const ms = new Date(iso) - Date.now(), a = Math.abs(ms), late = ms < 0;
+  const txt = a < 3600e3 ? `${Math.max(1, Math.round(a / 60e3))} phút` : a < 86400e3 ? `${Math.round(a / 3600e3)} giờ` : `${Math.round(a / 86400e3)} ngày`;
+  return { late, soon: !late && ms < 86400e3, text: late ? `Quá hạn ${txt}` : `Còn ${txt}` };
+}
+
+// ---------- Giao diện sáng / tối ----------
+export function applyTheme(mode = localStorage.getItem('theme') || 'system') {
+  const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  return mode;
+}
+export function useTheme() {
+  const [mode, setMode] = useState(localStorage.getItem('theme') || 'system');
+  useEffect(() => {
+    applyTheme(mode);
+    const mq = matchMedia('(prefers-color-scheme: dark)');
+    const f = () => applyTheme(mode);
+    mq.addEventListener('change', f);
+    return () => mq.removeEventListener('change', f);
+  }, [mode]);
+  const cycle = () => {
+    const next = mode === 'light' ? 'dark' : mode === 'dark' ? 'system' : 'light';
+    localStorage.setItem('theme', next);
+    setMode(next);
+  };
+  return [mode, cycle];
+}
 
 export const ErrorBox = ({ msg }) => msg ? html`<div class="alert error">${msg}</div>` : null;
 
@@ -125,6 +256,19 @@ const ICONS = {
   check: 'M20 6 9 17l-5-5',
   x: 'M18 6 6 18M6 6l12 12',
   menu: 'M3 6h18M3 12h18M3 18h18',
+  alert: 'M12 9v4M12 17h.01M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.4 0z',
+  calendar: 'M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM16 2v4M8 2v4M3 10h18',
+  clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+  sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42',
+  moon: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
+  monitor: 'M3 4h18v12H3zM8 20h8M12 16v4',
+  panel: 'M3 4h18v16H3zM9 4v16',
+  chevronRight: 'M9 18l6-6-6-6',
+  chevronLeft: 'M15 18l-6-6 6-6',
+  arrowRight: 'M5 12h14M12 5l7 7-7 7',
+  send: 'M22 2 11 13M22 2l-7 20-4-9-9-4z',
+  file: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5',
+  more: 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
 };
 export const Icon = ({ name, size = 18 }) => html`
   <svg class="ico" width=${size} height=${size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
