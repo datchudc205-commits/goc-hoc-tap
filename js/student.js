@@ -5,6 +5,13 @@ import {
   toast, confirmDialog, EmptyState, SubjectChip, subjectTone, ProgressRing, relTime, countdown,
 } from './ui.js';
 import { AnswerView, keyOf } from './teacher.js';
+import { ai } from './db.js';
+
+const HINT_LABEL = { 1: 'Hiểu đề bài', 2: 'Các bước làm', 3: 'Ví dụ tương tự' };
+const fmtClock = (ms) => {
+  const t = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
+};
 import { compressImage } from './image.js';
 
 // =====================================================================
@@ -12,9 +19,10 @@ import { compressImage } from './image.js';
 // =====================================================================
 export function StudentHome({ profile }) {
   const [list, err] = useLoad(() => q(sb.from('assignments')
-    .select('id, title, subject, due_at, instructions, created_at, submissions(id, status, score, max_score, submitted_at, returned_at)')
+    .select('id, title, subject, due_at, instructions, created_at, time_limit_minutes, submissions(id, status, score, max_score, submitted_at, returned_at)')
     .eq('student_id', profile.id).eq('published', true)
     .order('created_at', { ascending: false })));
+  const [stars] = useLoad(() => rpc('star_balance', { p_student: profile.id }));
 
   if (err) return html`<${ErrorBox} msg=${err} />`;
   if (!list) return html`<${Loading} />`;
@@ -41,6 +49,7 @@ export function StudentHome({ profile }) {
       <a class=${'task-card tone-' + subjectTone(a.subject)} href=${href}>
         <div class="task-top"><${SubjectChip} subject=${a.subject} short />
           ${cd && html`<span class=${'due-pill ' + (cd.late ? 'late' : cd.soon ? 'soon' : '')}><${Icon} name="clock" size=${13} /> ${cd.text}</span>`}
+          ${open && a.time_limit_minutes && html`<span class="due-pill">⏱ ${a.time_limit_minutes} phút</span>`}
           ${s && s.status === 'submitted' && html`<span class="tag orange">Chờ chấm</span>`}
           ${s && s.status === 'returned' && html`<${ScoreBadge} score=${s.score} max=${s.max_score} />`}
         </div>
@@ -67,6 +76,7 @@ export function StudentHome({ profile }) {
       <div class="hero-stats">
         <${ProgressRing} value=${list.length ? finished / list.length : 0} label=${`${finished}/${list.length}`} sub="đã nộp" size=${104} />
         <div class="hero-mini">
+          <a class="hero-stars" href="#/sao"><b>${stars == null ? '–' : stars} ⭐</b><span>sao của em</span></a>
           <div><b>${done.length}</b><span>bài có điểm</span></div>
           <div><b>${doneAvg == null ? '–' : fmtNum(Math.round(doneAvg * 10) / 10)}</b><span>điểm TB</span></div>
         </div>
@@ -102,29 +112,102 @@ export function DoAssignment({ profile, assignmentId }) {
   const dirty = useRef(new Set());
   const inflight = useRef(new Set());
 
+  const [startTick, setStartTick] = useState(0);
+  const [starting, setStarting] = useState(false);
+  const [hints, setHints] = useState({}); // qid → [{level, hint}]
+  const [hintBusy, setHintBusy] = useState('');
+  const [now, setNow] = useState(Date.now());
+  const [extra, setExtra] = useState(0);
+  const autoDone = useRef(false);
+  const warned = useRef({});
+
   const [data, err] = useLoad(async () => {
-    const sid = await rpc('start_submission', { p_assignment: assignmentId });
-    const s = await q(sb.from('submissions').select('id, status').eq('id', sid).single());
-    if (s.status !== 'in_progress') { go('/ket-qua/' + sid); return null; }
-    const [a, qs, ans] = await Promise.all([
-      q(sb.from('assignments').select('id, title, subject, instructions, due_at').eq('id', assignmentId).single()),
+    const a = await q(sb.from('assignments').select('id, title, subject, instructions, due_at, time_limit_minutes').eq('id', assignmentId).single());
+    let s = await q(sb.from('submissions').select('id, status, started_at, extra_minutes')
+      .eq('assignment_id', assignmentId).eq('student_id', profile.id).maybeSingle());
+    if (!s && a.time_limit_minutes) {
+      const qs = await q(sb.from('questions').select('id').eq('assignment_id', assignmentId));
+      return { needStart: true, a, count: qs.length };
+    }
+    if (!s) {
+      const sid0 = await rpc('start_submission', { p_assignment: assignmentId });
+      s = await q(sb.from('submissions').select('id, status, started_at, extra_minutes').eq('id', sid0).single());
+    }
+    if (s.status !== 'in_progress') { go('/ket-qua/' + s.id); return null; }
+    const [qs, ans, hl] = await Promise.all([
       q(sb.from('questions').select('id, position, type, prompt, options, points').eq('assignment_id', assignmentId).order('position')),
-      q(sb.from('answers').select('question_id, answer_text, image_paths').eq('submission_id', sid)),
+      q(sb.from('answers').select('question_id, answer_text, image_paths').eq('submission_id', s.id)),
+      q(sb.from('hint_log').select('question_id, level, hint').eq('submission_id', s.id).order('level')),
     ]);
     const init = {};
     for (const x of qs) init[x.id] = { text: '', images: [] };
     for (const r of ans) init[r.question_id] = { text: r.answer_text, images: r.image_paths };
     ansRef.current = init;
     setAnswers(init);
+    const hmap = {};
+    for (const h of hl) (hmap[h.question_id] = hmap[h.question_id] || []).push(h);
+    setHints(hmap);
+    setExtra(s.extra_minutes || 0);
     setPreviews(await signedUrls(ans.flatMap((r) => r.image_paths)));
-    return { sid, a, qs };
-  }, [assignmentId]);
+    return { sid: s.id, s, a, qs };
+  }, [assignmentId, startTick]);
 
   // Lưu các thay đổi còn dở khi rời trang
   useEffect(() => () => { for (const qid of dirty.current) flush(qid); }, [data]);
 
+  // Đồng hồ: chạy mỗi giây; mỗi 30 giây xem anh có cộng thêm giờ không
+  const limit = data && data.a && data.a.time_limit_minutes;
+  useEffect(() => {
+    if (!data || data.needStart || !limit) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    const poll = setInterval(async () => {
+      const { data: r } = await sb.from('submissions').select('extra_minutes').eq('id', data.sid).single();
+      if (r && r.extra_minutes !== extra) {
+        if (r.extra_minutes > extra) toast(`Em được thêm ${r.extra_minutes - extra} phút làm bài!`);
+        setExtra(r.extra_minutes);
+      }
+    }, 30000);
+    return () => { clearInterval(t); clearInterval(poll); };
+  }, [data, extra]);
+  const deadline = data && data.s && limit ? new Date(data.s.started_at).getTime() + (limit + extra) * 60000 : null;
+  const remaining = deadline ? deadline - now : null;
+  useEffect(() => {
+    if (remaining == null) return;
+    if (remaining <= 5 * 60000 && remaining > 60000 && !warned.current.five) { warned.current.five = true; toast('Còn 5 phút nữa là hết giờ!', 'error'); }
+    if (remaining <= 60000 && remaining > 0 && !warned.current.one) { warned.current.one = true; toast('Còn 1 phút! Em kiểm tra lại bài nhé.', 'error'); }
+    if (remaining <= 0 && !autoDone.current) { autoDone.current = true; doSubmit(true); }
+  }, [remaining == null ? null : Math.floor(remaining / 1000)]);
+
   if (err) return html`<${Back} /><${ErrorBox} msg=${err} />`;
   if (!data) return html`<${Loading} />`;
+
+  if (data.needStart) {
+    const a0 = data.a;
+    const cd0 = a0.due_at ? countdown(a0.due_at) : null;
+    return html`
+      <${Back} label="Danh sách bài" />
+      <div class="start-card card">
+        <div class="start-ico">⏱</div>
+        <${SubjectChip} subject=${a0.subject} />
+        <h1>${a0.title}</h1>
+        <div class="start-facts">
+          <div><b>${a0.time_limit_minutes} phút</b><span>thời gian làm bài</span></div>
+          <div><b>${data.count}</b><span>câu hỏi</span></div>
+          ${cd0 && html`<div><b class=${cd0.late ? 'danger' : ''}>${cd0.text}</b><span>hạn nộp</span></div>`}
+        </div>
+        ${a0.instructions && html`<div class="note">💬 ${nl2br(a0.instructions)}</div>`}
+        <ul class="start-rules">
+          <li>Khi bấm <b>Bắt đầu</b>, đồng hồ sẽ chạy ngay.</li>
+          <li>Bài tự lưu khi em làm. <b>Hết giờ bài sẽ tự nộp.</b></li>
+          <li>Không hiểu câu nào thì bấm <b>💡 Gợi ý cách làm</b>.</li>
+        </ul>
+        <button class="btn primary lg" disabled=${starting} onClick=${async () => {
+          setStarting(true);
+          try { await rpc('start_submission', { p_assignment: assignmentId }); setStartTick((t) => t + 1); }
+          catch (e) { toast(e.message, 'error'); setStarting(false); }
+        }}>${starting ? html`<span class="btn-spin"></span> Đang mở bài…` : html`<${Icon} name="arrowRight" /> Bắt đầu làm bài`}</button>
+      </div>`;
+  }
   const { sid, a, qs } = data;
 
   function flush(qid) {
@@ -187,16 +270,35 @@ export function DoAssignment({ profile, assignmentId }) {
       ? `Em còn ${left} câu chưa làm. Vẫn nộp bài chứ? Nộp rồi sẽ không sửa được nữa.`
       : 'Em chắc chắn muốn nộp bài? Nộp rồi sẽ không sửa được nữa.';
     if (!(await confirmDialog({ title: 'Nộp bài?', message: msg, confirmText: 'Nộp bài', danger: left > 0 }))) return;
+    doSubmit(false);
+  }
+
+  // auto = true: hết giờ, nộp ngay không hỏi
+  async function doSubmit(auto) {
     setSubmitting(true); setActionErr('');
     try {
-      await Promise.all([...dirty.current].map((qid) => flush(qid)));
-      await Promise.all([...inflight.current]);
+      try {
+        await Promise.all([...dirty.current].map((qid) => flush(qid)));
+        await Promise.all([...inflight.current]);
+      } catch (e) { if (!auto) throw e; }
       await rpc('submit_submission', { p_submission: sid });
+      if (auto) toast('Hết giờ! Bài của em đã được nộp tự động.');
       go('/ket-qua/' + sid);
     } catch (e) {
       setActionErr(e.message);
       setSubmitting(false);
     }
+  }
+
+  async function askHint(x) {
+    setHintBusy(x.id);
+    const v = ansRef.current[x.id] || {};
+    const draft = x.type === 'mcq' && v.text !== '' && v.text != null ? `Em đang chọn: ${x.options[Number(v.text)] || ''}` : (v.text || '');
+    try {
+      const r = await ai({ action: 'hint', submission_id: sid, question_id: x.id, current_answer: draft });
+      setHints((h) => ({ ...h, [x.id]: [...(h[x.id] || []), { level: r.level, hint: r.hint }] }));
+    } catch (e) { toast(e.message, 'error'); }
+    setHintBusy('');
   }
 
   const due = dueInfo(a.due_at, false);
@@ -211,6 +313,8 @@ export function DoAssignment({ profile, assignmentId }) {
 
     <div class="progress-sticky">
       <div class="progress-row">
+        ${remaining != null && html`<span class=${'timer ' + (remaining <= 60000 ? 'danger' : remaining <= 5 * 60000 ? 'warn' : '')} aria-live="polite">
+          <${Icon} name="clock" size=${16} /> ${fmtClock(remaining)}</span>`}
         <div class="progress-track"><div class="progress-fill" style=${`width:${(answeredCount / qs.length) * 100}%`}></div></div>
         <span class="small"><b>${answeredCount}</b>/${qs.length} câu</span>
       </div>
@@ -266,6 +370,16 @@ export function DoAssignment({ profile, assignmentId }) {
             </label>
             <input class="answer-input" value=${v.text} placeholder="Ghi chú thêm (không bắt buộc)"
                    onInput=${(e) => update(x.id, { text: e.target.value })} onBlur=${() => flush(x.id).catch(() => {})} />`}
+
+          <div class="hint-zone">
+            ${(hints[x.id] || []).map((h) => html`
+              <div class="hint-card"><div class="hint-level">💡 Gợi ý ${h.level}/3 · ${HINT_LABEL[h.level]}</div><div>${nl2br(h.hint)}</div></div>`)}
+            ${(hints[x.id] || []).length < 3 ? html`
+              <button class="btn hint-btn" disabled=${hintBusy === x.id} onClick=${() => askHint(x)}>
+                ${hintBusy === x.id ? html`<span class="btn-spin"></span> Cô đang nghĩ cách giải thích…`
+                  : (hints[x.id] || []).length ? '💡 Em vẫn chưa hiểu – gợi ý thêm' : '💡 Em chưa hiểu – gợi ý cách làm'}
+              </button>` : html`<p class="small muted">Em đã dùng hết 3 gợi ý cho câu này. Cố lên, em làm được mà! 💪</p>`}
+          </div>
         </div>`;
     })}
 
@@ -283,10 +397,12 @@ export function DoAssignment({ profile, assignmentId }) {
 export function ResultView({ id }) {
   const [data, err] = useLoad(async () => {
     const s = await q(sb.from('submissions').select('*, assignments(id, title, subject)').eq('id', id).single());
-    const [qs, ans] = await Promise.all([
+    const [qs, ans, stars] = await Promise.all([
       q(sb.from('questions').select('*, question_keys(accepted, explanation)').eq('assignment_id', s.assignment_id).order('position')),
       q(sb.from('answers').select('*').eq('submission_id', id)),
+      q(sb.from('star_events').select('amount, reason, code').eq('ref_id', id)),
     ]);
+    s.stars = stars;
     const urls = await signedUrls(ans.flatMap((r) => r.image_paths));
     return { s, qs, byQ: Object.fromEntries(ans.map((r) => [r.question_id, r])), urls };
   }, [id]);
@@ -311,6 +427,12 @@ export function ResultView({ id }) {
           <div class="muted">${fmtNum(s.score)} / ${fmtNum(s.max_score)} điểm · ${score10 >= 9 ? 'Xuất sắc! 🌟' : score10 >= 7 ? 'Giỏi lắm! 👍' : score10 >= 5 ? 'Cố gắng thêm nhé! 💪' : 'Xem lại các câu sai nhé! 📖'}</div>
           ${s.teacher_comment && html`<div class="note">💬 ${nl2br(s.teacher_comment)}</div>`}`
         : html`<div class="waiting">⏳ Em đã nộp bài lúc ${fmtDate(s.submitted_at)}.<br />Đang chờ chấm điểm.</div>`}
+      ${s.stars.length > 0 && html`
+        <div class="star-earned">
+          ${s.stars.map((e) => html`<span class=${'star-chip ' + (e.amount > 0 ? 'plus' : 'minus')}>
+            ${e.amount > 0 ? '+' : ''}${e.amount} ⭐ ${e.code === 'ontime' ? 'Nộp đúng hạn' : e.code === 'late' ? 'Nộp muộn' : e.code === 'score' ? 'Điểm tốt' : e.reason}</span>`)}
+          <a class="link small" href="#/sao">Xem sao của em →</a>
+        </div>`}
     </div>
 
     ${qs.map((x, i) => {

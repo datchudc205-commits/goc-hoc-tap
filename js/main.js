@@ -7,6 +7,7 @@ import { TeacherHome, AssignmentEditor, GradeSubmission, Progress, StudentsPage 
 import { StudentHome, DoAssignment, ResultView } from './student.js';
 import { ClassworkList, ClassworkNew, ClassworkDetail } from './classwork.js';
 import { AdminPage } from './admin.js';
+import { TeacherRewards, StudentStars } from './rewards.js';
 
 function SetupNeeded() {
   return html`
@@ -28,6 +29,7 @@ function navFor(profile, c = {}) {
       { group: 'Học tập', items: [
         { href: '/', label: 'Bài của em', short: 'Bài tập', icon: 'clipboard', badge: c.todo },
         { href: '/tren-lop', label: 'Kiểm tra bài trên lớp', short: 'Trên lớp', icon: 'camera' },
+        { href: '/sao', label: 'Sao & phần thưởng', short: 'Sao', icon: 'star', badge: c.tasks },
       ] },
     ];
   }
@@ -41,6 +43,7 @@ function navFor(profile, c = {}) {
       { href: '/tien-do', label: 'Tiến độ học tập', short: 'Tiến độ', icon: 'chart' },
     ] },
     { group: 'Quản lý', items: [
+      { href: '/thuong-phat', label: 'Thưởng & thử thách', short: 'Thưởng', icon: 'star', badge: c.rewards, badgeTone: 'warn' },
       { href: '/hoc-sinh', label: 'Học sinh', short: 'Học sinh', icon: 'users' },
       ...(profile.is_admin ? [{ href: '/admin', label: 'Quản trị hệ thống', short: 'Quản trị', icon: 'shield' }] : []),
     ] },
@@ -49,16 +52,22 @@ function navFor(profile, c = {}) {
 
 async function loadCounts(profile) {
   if (profile.role === 'teacher') {
-    const [sub, cw] = await Promise.all([
+    const [sub, cw, rq, tk] = await Promise.all([
       sb.from('submissions').select('id, assignments!inner(teacher_id)', { count: 'exact', head: true })
         .eq('status', 'submitted').eq('assignments.teacher_id', profile.id),
       sb.from('classwork').select('id, profiles!classwork_student_id_fkey!inner(teacher_id)', { count: 'exact', head: true })
         .is('reviewed_at', null).eq('status', 'checked').eq('profiles.teacher_id', profile.id),
+      sb.from('reward_requests').select('id, profiles!reward_requests_student_id_fkey!inner(teacher_id)', { count: 'exact', head: true })
+        .eq('status', 'pending').eq('profiles.teacher_id', profile.id),
+      sb.from('tasks').select('id', { count: 'exact', head: true }).eq('teacher_id', profile.id).eq('status', 'done'),
     ]);
-    return { submitted: sub.count || 0, classwork: cw.count || 0 };
+    return { submitted: sub.count || 0, classwork: cw.count || 0, rewards: (rq.count || 0) + (tk.count || 0) };
   }
-  const { data } = await sb.from('assignments').select('id, submissions(status)').eq('student_id', profile.id).eq('published', true);
-  return { todo: (data || []).filter((a) => !a.submissions[0] || a.submissions[0].status === 'in_progress').length };
+  const [{ data }, tk] = await Promise.all([
+    sb.from('assignments').select('id, submissions(status)').eq('student_id', profile.id).eq('published', true),
+    sb.from('tasks').select('id', { count: 'exact', head: true }).eq('student_id', profile.id).eq('status', 'todo'),
+  ]);
+  return { todo: (data || []).filter((a) => !a.submissions[0] || a.submissions[0].status === 'in_progress').length, tasks: tk.count || 0 };
 }
 
 const THEME_LABEL = { light: 'Giao diện sáng', dark: 'Giao diện tối', system: 'Theo hệ thống' };
@@ -148,6 +157,7 @@ function TeacherRoutes({ path, profile }) {
   if ((m = match('/cham/:id', path))) return html`<${GradeSubmission} key=${m.id} id=${m.id} />`;
   if (path === '/tien-do') return html`<${Progress} profile=${profile} />`;
   if (path === '/hoc-sinh') return html`<${StudentsPage} profile=${profile} />`;
+  if (path === '/thuong-phat') return html`<${TeacherRewards} profile=${profile} />`;
   if (path === '/tren-lop') return html`<${ClassworkList} profile=${profile} />`;
   if (path === '/tren-lop/moi') return html`<${ClassworkNew} profile=${profile} />`;
   if ((m = match('/tren-lop/:id', path))) return html`<${ClassworkDetail} key=${m.id} id=${m.id} profile=${profile} />`;
@@ -160,6 +170,7 @@ function StudentRoutes({ path, profile }) {
   if (path === '/') return html`<${StudentHome} profile=${profile} />`;
   if ((m = match('/lam/:id', path))) return html`<${DoAssignment} key=${m.id} profile=${profile} assignmentId=${m.id} />`;
   if ((m = match('/ket-qua/:id', path))) return html`<${ResultView} key=${m.id} id=${m.id} />`;
+  if (path === '/sao') return html`<${StudentStars} profile=${profile} />`;
   if (path === '/tren-lop') return html`<${ClassworkList} profile=${profile} />`;
   if (path === '/tren-lop/moi') return html`<${ClassworkNew} profile=${profile} />`;
   if ((m = match('/tren-lop/:id', path))) return html`<${ClassworkDetail} key=${m.id} id=${m.id} profile=${profile} />`;

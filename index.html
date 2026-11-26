@@ -31,7 +31,7 @@
     (function () {
       var v = Date.now(), imports = {};
       ['main', 'config', 'db', 'lib', 'ui', 'auth', 'teacher', 'student', 'mathgen', 'image',
-       'curriculum', 'classwork', 'admin'].forEach(function (f) {
+       'curriculum', 'classwork', 'admin', 'rewards'].forEach(function (f) {
         imports['./js/' + f + '.js'] = './js/' + f + '.js?v=' + v;
       });
       var s = document.createElement('script');

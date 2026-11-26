@@ -7,6 +7,7 @@ import {
 } from './ui.js';
 import { generateMath, OPS } from './mathgen.js';
 import { BOOK } from './curriculum.js';
+import { AssignTaskModal } from './rewards.js';
 
 export const keyOf = (row) => (Array.isArray(row.question_keys) ? row.question_keys[0] : row.question_keys) || { accepted: [], explanation: '' };
 
@@ -35,7 +36,11 @@ export function TeacherHome({ profile }) {
       ? await q(sb.from('classwork').select('id, student_id, subject, lesson, status, score, created_at')
           .in('student_id', ids).is('reviewed_at', null).order('created_at', { ascending: false }).limit(20))
       : [];
-    return { students, assignments, classwork };
+    const [requests, tasksDone] = ids.length ? await Promise.all([
+      q(sb.from('reward_requests').select('id, student_id, created_at, rewards(title, icon, cost)').in('student_id', ids).eq('status', 'pending')),
+      q(sb.from('tasks').select('id, student_id, title, done_at').eq('teacher_id', profile.id).eq('status', 'done')),
+    ]) : [[], []];
+    return { students, assignments, classwork, requests, tasksDone };
   });
 
   if (err) return html`<${ErrorBox} msg=${err} />`;
@@ -70,6 +75,12 @@ export function TeacherHome({ profile }) {
     ...rows.filter((a) => ['assigned', 'doing'].includes(a.st.key) && a.due_at && new Date(a.due_at) < new Date()).map((a) => ({
       key: 'o' + a.id, icon: 'clock', tone: 'red', href: '#/bai/' + a.id,
       title: `Quá hạn: ${a.title}`, meta: `${names[a.student_id] || ''} chưa nộp · ${countdown(a.due_at).text.toLowerCase()}`, cta: 'Xem' })),
+    ...data.requests.map((r) => ({
+      key: 'r' + r.id, icon: 'gift', tone: 'warn', href: '#/thuong-phat',
+      title: `Xin đổi quà: ${r.rewards.icon} ${r.rewards.title}`, meta: `${names[r.student_id] || ''} · ${r.rewards.cost} ⭐ · ${relTime(r.created_at)}`, cta: 'Duyệt' })),
+    ...data.tasksDone.map((t) => ({
+      key: 't' + t.id, icon: 'flag', tone: 'violet', href: '#/thuong-phat',
+      title: `Đã làm thử thách: ${t.title}`, meta: `${names[t.student_id] || ''} báo xong ${relTime(t.done_at)}`, cta: 'Xác nhận' })),
   ];
 
   // Tóm tắt từng học sinh
@@ -268,7 +279,7 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
   const [data, err] = useLoad(async () => {
     const students = await q(sb.from('profiles').select('id, full_name, grade').eq('teacher_id', profile.id).order('created_at'));
     let f = {
-      title: '', subject: SUBJECTS[0], instructions: '', due_at: '', student_id: students[0] ? students[0].id : '',
+      title: '', subject: SUBJECTS[0], instructions: '', due_at: '', time_limit: '', student_id: students[0] ? students[0].id : '',
       published: false, questions: [blankQuestion('short')],
     };
     let subs = [];
@@ -281,6 +292,7 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
         subject: a.subject, instructions: a.instructions,
         due_at: copyFrom ? '' : toLocalInput(a.due_at),
         student_id: a.student_id, published: copyFrom ? false : a.published,
+        time_limit: a.time_limit_minutes ? String(a.time_limit_minutes) : '',
         questions: qs.map(fromDb),
       };
       if (id) subs = a.submissions;
@@ -339,7 +351,8 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
           payload.questions[i].accepted = [String(kept)];
         }
       });
-      await rpc('save_assignment', { p: payload });
+      const savedId = await rpc('save_assignment', { p: payload });
+      await rpc('set_time_limit', { p_assignment: savedId, p_minutes: form.time_limit ? Number(form.time_limit) : null });
       toast(published ? `Đã giao bài "${form.title}" cho em.` : 'Đã lưu nháp.');
       go('/');
     } catch (e) {
@@ -416,9 +429,22 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
             </select>
           </label>
         </div>
+        <div class="grid2">
+        <label>Thời gian làm bài
+          <select value=${['', '10', '15', '20', '30', '45', '60', '90'].includes(form.time_limit) ? form.time_limit : 'custom'}
+                  onChange=${(e) => set({ time_limit: e.target.value === 'custom' ? '25' : e.target.value })}>
+            <option value="">Không giới hạn</option>
+            ${['10', '15', '20', '30', '45', '60', '90'].map((m) => html`<option value=${m}>${m} phút</option>`)}
+            <option value="custom">Tự nhập…</option>
+          </select>
+          ${!['', '10', '15', '20', '30', '45', '60', '90'].includes(form.time_limit) && html`
+            <input type="number" min="1" max="300" value=${form.time_limit} onInput=${(e) => set({ time_limit: e.target.value })} placeholder="Số phút" />`}
+          <span class="hint">Đồng hồ chạy khi em bấm "Bắt đầu"; hết giờ bài tự nộp.</span>
+        </label>
         <label>Hạn nộp (không bắt buộc)
           <input type="datetime-local" value=${form.due_at} onInput=${(e) => set({ due_at: e.target.value })} />
         </label>
+        </div>
         <label>Lời dặn cho em (không bắt buộc)
           <textarea rows="2" value=${form.instructions} onInput=${(e) => set({ instructions: e.target.value })}
                     placeholder="VD: Làm cẩn thận, chụp ảnh rõ nét nhé!"></textarea>
@@ -448,6 +474,7 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
         <div class="panel-head"><h2>Tóm tắt</h2>${form.subject && html`<${SubjectChip} subject=${form.subject} short />`}</div>
         <dl class="summary-list">
           <div><dt>Giao cho</dt><dd>${student ? student.full_name : '—'}</dd></div>
+          <div><dt>Thời gian</dt><dd>${form.time_limit ? form.time_limit + ' phút' : 'Không giới hạn'}</dd></div>
           <div><dt>Hạn nộp</dt><dd>${form.due_at ? fmtDate(new Date(form.due_at).toISOString()) : 'Không giới hạn'}</dd></div>
           <div><dt>Số câu</dt><dd>${form.questions.length}</dd></div>
           <div><dt>Tổng điểm</dt><dd>${fmtNum(totalPoints)}</dd></div>
@@ -650,14 +677,18 @@ export function GradeSubmission({ id }) {
   const [aiBusy, setAiBusy] = useState(false);
   const [aiMsg, setAiMsg] = useState('');
   const [aiErr, setAiErr] = useState('');
+  const [taskModal, setTaskModal] = useState(false);
 
   const [data, err, reload] = useLoad(async () => {
-    const s = await q(sb.from('submissions').select('*, assignments(id, title, subject, instructions, due_at)').eq('id', id).single());
-    const [qs, ans, student] = await Promise.all([
+    const s = await q(sb.from('submissions').select('*, assignments(id, title, subject, instructions, due_at, time_limit_minutes)').eq('id', id).single());
+    const [qs, ans, student, hl] = await Promise.all([
       q(sb.from('questions').select('*, question_keys(accepted, explanation)').eq('assignment_id', s.assignment_id).order('position')),
       q(sb.from('answers').select('*').eq('submission_id', id)),
-      q(sb.from('profiles').select('full_name').eq('id', s.student_id).single()),
+      q(sb.from('profiles').select('id, full_name, grade').eq('id', s.student_id).single()),
+      q(sb.from('hint_log').select('question_id, level, hint').eq('submission_id', id).order('level')),
     ]);
+    s.hints = {};
+    for (const h of hl) (s.hints[h.question_id] = s.hints[h.question_id] || []).push(h);
     const urls = await signedUrls(ans.flatMap((a) => a.image_paths));
     const byQ = Object.fromEntries(ans.map((a) => [a.question_id, a]));
     const g = {};
@@ -717,6 +748,15 @@ export function GradeSubmission({ id }) {
 
   const graded = qs.length - missing;
   const late = a.due_at && s.submitted_at && new Date(s.submitted_at) > new Date(a.due_at);
+  const usedMin = s.submitted_at ? Math.max(1, Math.round((new Date(s.submitted_at) - new Date(s.started_at)) / 60000)) : null;
+  const limitMin = a.time_limit_minutes ? a.time_limit_minutes + (s.extra_minutes || 0) : null;
+  const leftMin = limitMin && s.status === 'in_progress' ? Math.round((new Date(s.started_at).getTime() + limitMin * 60000 - Date.now()) / 60000) : null;
+  const hintTotal = Object.values(s.hints).reduce((t, h) => t + h.length, 0);
+  const score10 = s.status === 'returned' && s.max_score ? (s.score / s.max_score) * 10 : null;
+  async function addTime() {
+    try { await rpc('add_extra_time', { p_submission: id, p_minutes: 10 }); toast('Đã cho em thêm 10 phút.'); reload(); }
+    catch (e) { toast(e.message, 'error'); }
+  }
   const jump = (i) => { const el = document.getElementById('q-' + i); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
   return html`
@@ -729,13 +769,18 @@ export function GradeSubmission({ id }) {
           <span><${Avatar} name=${student.full_name} size="xs" /> ${student.full_name}</span>
           ${s.submitted_at && html`<span><${Icon} name="clock" size=${15} /> Nộp ${fmtDate(s.submitted_at)}</span>`}
           ${late && html`<span class="tag red">Nộp muộn</span>`}
+          ${usedMin && html`<span>⏱ Làm trong ${usedMin} phút${limitMin ? ` / ${limitMin} phút` : ''}</span>`}
+          ${hintTotal > 0 && html`<span>💡 Dùng ${hintTotal} gợi ý</span>`}
           <span class=${statusOf({ published: true, submissions: [s] }).cls}>${statusOf({ published: true, submissions: [s] }).label}</span>
         </div>
       </div>
       <a class="btn" href=${'#/bai/' + a.id}><${Icon} name="file" /> Xem đề</a>
     </div>
 
-    ${s.status === 'in_progress' && html`<div class="alert warn">Em đang làm, chưa nộp. Dưới đây là phần em đã làm tới giờ.</div>`}
+    ${s.status === 'in_progress' && html`<div class="alert warn row-alert">
+      <span>Em đang làm, chưa nộp. Dưới đây là phần em đã làm tới giờ.${leftMin != null ? ` Còn khoảng ${Math.max(0, leftMin)} phút.` : ''}</span>
+      ${limitMin && html`<button class="btn sm" onClick=${addTime}><${Icon} name="plus" size=${15} /> Thêm 10 phút</button>`}
+    </div>`}
 
     <div class="layout-aside">
       <div class="layout-main">
@@ -754,6 +799,8 @@ export function GradeSubmission({ id }) {
               </div>
               <div class="prompt">${nl2br(x.prompt)}</div>
               <${AnswerView} q=${x} ans=${ans} k=${k} urls=${urls} showKey />
+              ${s.hints[x.id] && html`<details class="hint-used"><summary>💡 Em đã xin ${s.hints[x.id].length} gợi ý cho câu này</summary>
+                ${s.hints[x.id].map((h) => html`<div class="hint-card"><div class="hint-level">Gợi ý ${h.level}</div>${nl2br(h.hint)}</div>`)}</details>`}
               <div class="grade-row">
                 <div class="score-input">
                   <input type="number" class="num" min="0" max=${x.points} step="0.25" value=${g.points} aria-label=${'Điểm câu ' + (i + 1)}
@@ -804,7 +851,16 @@ export function GradeSubmission({ id }) {
             <button class="btn primary full lg" disabled=${busy || missing > 0} onClick=${submit}>
               ${busy ? html`<span class="btn-spin"></span> Đang lưu…` : html`<${Icon} name="send" /> ${s.status === 'returned' ? 'Cập nhật điểm' : 'Trả bài cho em'}`}
             </button>
-            ${s.status === 'returned' && html`<p class="small muted center">Đã trả bài ${relTime(s.returned_at)}.</p>`}`}
+            ${s.status === 'returned' && html`<p class="small muted center">Đã trả bài ${relTime(s.returned_at)}.</p>`}
+            ${s.status === 'returned' && (late || (score10 != null && score10 < 5)) && html`
+              <div class="suggest-box">
+                <b>🌱 Gợi ý nhẹ nhàng</b>
+                <p class="small">${late ? 'Em nộp muộn' : 'Điểm chưa tốt'} – thay vì phạt, hãy giao một <b>thử thách nhỏ</b>. Em làm xong còn được cộng sao.</p>
+                <button class="btn sm full" onClick=${() => setTaskModal(true)}><${Icon} name="flag" size=${15} /> Giao thử thách nhỏ</button>
+              </div>`}`}
+            ${taskModal && html`<${AssignTaskModal} students=${[student]} studentId=${student.id}
+              suggestion=${late ? '📖 Đọc sách thêm 15 phút' : '✏️ Làm lại các câu sai và giải thích cho anh nghe'}
+              onClose=${() => setTaskModal(false)} onDone=${() => setTaskModal(false)} />`}
         </div>
       </aside>
     </div>`;

@@ -149,6 +149,34 @@ Cài đặt *Verify JWT with legacy secret* để **tắt**, vì hàm đã tự 
   - Có mục "Quên mật khẩu?".
   - Đăng xuất chỉ thoát trên thiết bị đang dùng.
 
+## Nâng cấp 3 – Thời gian làm bài, sao thưởng, thử thách nhỏ, gợi ý cách làm
+
+**Cài đặt (đã làm sẵn trên project hiện tại):**
+
+1. Supabase → SQL Editor → dán toàn bộ `supabase/003_thuong_phat.sql` → Run (chạy **sau** `002_nang_cap.sql`).
+2. Cài lại Edge Function `ai` bằng code mới trong `supabase/functions/ai/index.ts` (có thêm phần "hint").
+
+**Tính năng mới:**
+
+- **Thời gian làm bài**: khi soạn bài, chọn 10–90 phút hoặc tự nhập.
+  - Em thấy màn hình "Bắt đầu làm bài". Bấm Bắt đầu thì đồng hồ chạy.
+  - Còn 5 phút và 1 phút có nhắc. Hết giờ bài **tự nộp**.
+  - Máy chủ cũng khoá việc lưu bài sau khi hết giờ (cho dư 1 phút), nên em không "lách" được.
+  - Khi em đang làm, trang chấm bài có nút **Thêm 10 phút**. Đồng hồ của em tự cập nhật trong vòng 30 giây.
+- **Sao ⭐ tự động**: +1 nộp đúng hạn; +1/+2/+3 theo điểm (từ 5, từ 7, từ 9 trở lên).
+  - Nộp muộn bị −1. Số sao **không bao giờ âm**.
+- **Thưởng / nhắc nhở** (trang *Thưởng & thử thách*): khen thưởng +1 đến +5 sao kèm lý do. Nhắc nhở nhẹ tối đa −3.
+- **Cửa hàng phần thưởng**: bạn tự đặt quà và giá sao.
+  - Em bấm "Đổi quà" → bạn duyệt thì mới trừ sao, hoặc bấm "Để sau" để từ chối.
+- **Thử thách nhỏ thay cho hình phạt**: ví dụ đọc sách 15 phút, làm lại câu sai, dọn góc học tập.
+  - Em báo "đã làm xong" → bạn xác nhận thì em được cộng sao, hoặc nhờ em làm lại.
+  - Khi chấm một bài nộp muộn hoặc dưới 5 điểm, app gợi ý giao thử thách.
+- **💡 Gợi ý cách làm**: em bấm khi không hiểu câu nào. Mỗi câu có tối đa 3 mức:
+  1. Hiểu đề
+  2. Các bước làm
+  3. Ví dụ tương tự với số khác
+  - AI **không được xem đáp án** và được dặn không giải hộ. Các gợi ý em đã xin hiện trên trang chấm bài.
+
 ## Không đăng nhập được? (báo "Sai tên đăng nhập hoặc mật khẩu")
 
 1. **Tắt bộ gõ tiếng Việt** (Unikey/EVKey) khi gõ mật khẩu. Trên điện thoại, chuyển bàn phím sang tiếng Anh. Bấm 👁 để xem mình đang gõ gì.
