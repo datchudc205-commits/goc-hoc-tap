@@ -73,6 +73,11 @@ function Register({ onDone }) {
     e.preventDefault();
     setBusy(true); setErr(''); setInfo('');
     try {
+      // Kiểm tra bằng code thay vì thuộc tính "pattern" (Preact đặt pattern rỗng → chặn cả email hợp lệ)
+      const l = login.trim();
+      if (!l.includes('@') && !/^[A-Za-z0-9._-]+$/.test(l)) {
+        throw new Error('Tên đăng nhập chỉ gồm chữ không dấu, số, dấu chấm, gạch ngang (VD: bena).');
+      }
       if (role === 'student') {
         const n = await q(sb.rpc('check_invite_code', { p_code: code }));
         if (!n) throw new Error('Mã mời không đúng. Hãy hỏi lại người giao bài.');
@@ -113,8 +118,7 @@ function Register({ onDone }) {
       <label>${role === 'teacher' ? 'Email' : 'Tên đăng nhập (hoặc email)'}
         <input value=${login} onInput=${(e) => setLogin(e.target.value)} autocomplete="username"
                type=${role === 'teacher' ? 'email' : 'text'}
-               placeholder=${role === 'teacher' ? 'ban@gmail.com' : 'VD: bena (viết liền, không dấu)'}
-               pattern=${role === 'teacher' ? null : '[A-Za-z0-9._@\\-]+'} required />
+               placeholder=${role === 'teacher' ? 'ban@gmail.com' : 'VD: bena (viết liền, không dấu)'} required />
       </label>
 
       <label>Mật khẩu (ít nhất 6 ký tự)
