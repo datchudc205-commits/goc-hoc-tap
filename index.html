@@ -3,12 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#2f6fde">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="Góc Học Tập – giao bài, làm bài và chấm bài trực tuyến cho gia đình, có trợ lý AI.">
   <title>Góc Học Tập</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap">
+  <!-- Luôn tải CSS mới nhất (tránh trình duyệt giữ bản cũ sau khi cập nhật) -->
+  <script>document.write('<link rel="stylesheet" href="css/style.css?v=' + Date.now() + '">');</script>
+  <noscript><link rel="stylesheet" href="css/style.css"></noscript>
 </head>
 <body>
   <div id="app"><div class="center muted" style="padding:3rem">Đang tải…</div></div>
@@ -16,7 +22,8 @@
     // Luôn tải các file JS cùng một phiên bản mới nhất (tránh trộn file cũ/mới sau khi cập nhật app)
     (function () {
       var v = Date.now(), imports = {};
-      ['main', 'config', 'db', 'lib', 'ui', 'auth', 'teacher', 'student', 'mathgen', 'image'].forEach(function (f) {
+      ['main', 'config', 'db', 'lib', 'ui', 'auth', 'teacher', 'student', 'mathgen', 'image',
+       'curriculum', 'classwork', 'admin'].forEach(function (f) {
         imports['./js/' + f + '.js'] = './js/' + f + '.js?v=' + v;
       });
       var s = document.createElement('script');

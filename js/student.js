@@ -1,7 +1,7 @@
 import { html, useState, useRef, useEffect } from './lib.js';
 import { sb, q, rpc, signedUrls, BUCKET } from './db.js';
 import {
-  useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, fmtDate, fmtNum, dueInfo, ScoreBadge, scoreOn10, nl2br,
+  useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, fmtDate, fmtNum, dueInfo, ScoreBadge, scoreOn10, nl2br, Icon,
 } from './ui.js';
 import { AnswerView, keyOf } from './teacher.js';
 import { compressImage } from './image.js';
@@ -46,7 +46,13 @@ export function StudentHome({ profile }) {
   };
 
   return html`
-    <h1>Chào ${profile.full_name}! 👋</h1>
+    <div class="page-head">
+      <div>
+        <h1>Chào ${profile.full_name}! 👋</h1>
+        <p class="page-sub">${todo.length ? `Em có ${todo.length} bài cần làm.` : 'Em đã làm hết bài được giao.'}</p>
+      </div>
+      <a class="btn" href="#/tren-lop/moi"><${Icon} name="camera" /> Kiểm tra bài trên lớp</a>
+    </div>
     <h2 class="section-title">Bài cần làm <small class="muted">(${todo.length})</small></h2>
     ${todo.length === 0
       ? html`<div class="card center">🎉 Em đã làm hết bài rồi!</div>`

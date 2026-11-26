@@ -1,10 +1,11 @@
-import { html, useState, useMemo } from './lib.js';
+import { html, useState, useMemo, useEffect, useRef } from './lib.js';
 import { sb, q, rpc, signedUrls, ai } from './db.js';
 import {
   useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, SUBJECTS, fmtDate, fmtNum, dueInfo,
-  scoreOn10, ScoreBadge, statusOf, nl2br,
+  scoreOn10, ScoreBadge, statusOf, nl2br, Icon, Modal, randomPassword, LessonPicker,
 } from './ui.js';
 import { generateMath, OPS } from './mathgen.js';
+import { BOOK } from './curriculum.js';
 
 export const keyOf = (row) => (Array.isArray(row.question_keys) ? row.question_keys[0] : row.question_keys) || { accepted: [], explanation: '' };
 
@@ -21,7 +22,11 @@ export function TeacherHome({ profile }) {
         .eq('teacher_id', profile.id)
         .order('created_at', { ascending: false })),
     ]);
-    return { students, assignments };
+    const ids = students.map((s) => s.id);
+    const classwork = ids.length
+      ? await q(sb.from('classwork').select('id, reviewed_at').in('student_id', ids).is('reviewed_at', null))
+      : [];
+    return { students, assignments, classworkToReview: classwork.length };
   });
 
   if (err) return html`<${ErrorBox} msg=${err} />`;
@@ -41,18 +46,42 @@ export function TeacherHome({ profile }) {
   const shown = withStatus.filter((a) =>
     filter === 'all' ? true : filter === 'open' ? ['assigned', 'doing'].includes(a.st.key) : a.st.key === filter);
 
-  return html`
-    ${students.length === 0 && html`<${InviteCard} profile=${profile} first />`}
+  const returned = withStatus.filter((a) => a.st.key === 'returned');
+  const avg = returned.length ? returned.reduce((t, a) => t + (scoreOn10(a.submissions[0].score, a.submissions[0].max_score) || 0), 0) / returned.length : null;
 
+  return html`
     <div class="page-head">
-      <h1>Bài tập đã giao</h1>
-      <button class="btn primary" disabled=${!students.length} onClick=${() => go('/bai/moi')}>+ Giao bài mới</button>
+      <div>
+        <h1>Tổng quan</h1>
+        <p class="page-sub">Xin chào ${profile.full_name} – đây là tình hình học tập hôm nay.</p>
+      </div>
+      <button class="btn primary" disabled=${!students.length} onClick=${() => go('/bai/moi')}><${Icon} name="plus" /> Giao bài mới</button>
     </div>
 
-    ${counts.submitted > 0 && html`
-      <div class="alert warn clickable" onClick=${() => setFilter('submitted')}>
-        📝 Có <b>${counts.submitted}</b> bài đang chờ bạn chấm.
-      </div>`}
+    ${students.length === 0 && html`<${InviteCard} profile=${profile} first />`}
+
+    <div class="stats-grid">
+      <button class="stat-card" onClick=${() => setFilter('submitted')}>
+        <span class="stat-ico warn"><${Icon} name="clipboard" /></span>
+        <span class="stat-num">${counts.submitted || 0}</span><span class="stat-label">Bài chờ chấm</span>
+      </button>
+      <button class="stat-card" onClick=${() => setFilter('open')}>
+        <span class="stat-ico blue"><${Icon} name="book" /></span>
+        <span class="stat-num">${(counts.assigned || 0) + (counts.doing || 0)}</span><span class="stat-label">Bài đang giao</span>
+      </button>
+      <a class="stat-card" href="#/tren-lop">
+        <span class="stat-ico violet"><${Icon} name="camera" /></span>
+        <span class="stat-num">${data.classworkToReview}</span><span class="stat-label">Bài trên lớp chưa xem</span>
+      </a>
+      <a class="stat-card" href="#/tien-do">
+        <span class="stat-ico green"><${Icon} name="chart" /></span>
+        <span class="stat-num">${avg == null ? '–' : fmtNum(Math.round(avg * 10) / 10)}</span><span class="stat-label">Điểm TB (/10)</span>
+      </a>
+    </div>
+
+    <div class="section-bar">
+      <h2>Bài tập đã giao</h2>
+    </div>
 
     <div class="chips">
       ${FILTERS.map(([k, label, n]) => html`
@@ -160,9 +189,10 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState('');
+  const [aiTopic, setAiTopic] = useState('');
 
   const [data, err] = useLoad(async () => {
-    const students = await q(sb.from('profiles').select('id, full_name').eq('teacher_id', profile.id).order('created_at'));
+    const students = await q(sb.from('profiles').select('id, full_name, grade').eq('teacher_id', profile.id).order('created_at'));
     let f = {
       title: '', subject: SUBJECTS[0], instructions: '', due_at: '', student_id: students[0] ? students[0].id : '',
       published: false, questions: [blankQuestion('short')],
@@ -268,8 +298,22 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
 
     <fieldset disabled=${locked}>
       <div class="card">
+        <div class="card-title"><${Icon} name="book" /> Chọn bài theo sách giáo khoa <span class="muted small">(không bắt buộc)</span></div>
+        <${LessonPicker} subject=${form.subject} onPick=${({ subject, chapter, lesson }) => {
+          const topic = [lesson, chapter].filter(Boolean).join(' – ');
+          setForm((f) => ({
+            ...f,
+            subject: subject || f.subject,
+            title: topic && (!f.title || f.autoTitle) ? `Ôn tập: ${lesson || chapter}` : f.title,
+            autoTitle: topic ? (!f.title || f.autoTitle) : f.autoTitle,
+          }));
+          if (topic) setAiTopic(`Môn ${subject}, lớp 6, sách ${BOOK}: ${topic}`);
+        }} />
+        ${aiTopic && html`<p class="small muted">✨ Khung "AI soạn đề" bên dưới đã điền sẵn bài này.</p>`}
+      </div>
+      <div class="card">
         <label>Tên bài
-          <input value=${form.title} onInput=${(e) => set({ title: e.target.value })} placeholder="VD: Ôn tập phép nhân bảng 7" />
+          <input value=${form.title} onInput=${(e) => set({ title: e.target.value, autoTitle: false })} placeholder="VD: Ôn tập phép nhân bảng 7" />
         </label>
         <div class="grid2">
           <label>Môn
@@ -303,7 +347,9 @@ export function AssignmentEditor({ profile, id, copyFrom }) {
           <button class="btn" onClick=${() => addQ([blankQuestion(t)])}>+ ${label}</button>`)}
       </div>
 
-      <${AIGenerator} subject=${form.subject} onAdd=${(items) => addQ(items.map(fromGenerated))} />
+      <${AIGenerator} subject=${form.subject} topicPreset=${aiTopic}
+        gradeDefault=${(data.students.find((s) => s.id === form.student_id) || {}).grade}
+        onAdd=${(items) => addQ(items.map(fromGenerated))} />
       <${MathGenerator} onAdd=${(items) => addQ(items.map(fromGenerated))} />
     </fieldset>
 
@@ -371,14 +417,22 @@ function QuestionEditor({ q: x, index, total, onChange, onMove, onRemove }) {
 // ✨ AI soạn đề (Gemini). Trang Tiến độ có thể gửi sẵn chủ đề qua sessionStorage('ai-topic').
 const AI_TYPES = { mcq: 'Trắc nghiệm', short: 'Điền đáp án', essay: 'Tự luận' };
 
-function AIGenerator({ subject, onAdd }) {
+function AIGenerator({ subject, onAdd, topicPreset, gradeDefault }) {
   const [preset] = useState(() => {
     const p = sessionStorage.getItem('ai-topic') || '';
     sessionStorage.removeItem('ai-topic');
     return p;
   });
   const [topic, setTopic] = useState(preset);
-  const [grade, setGrade] = useState(localStorage.getItem('ai-grade') || '3');
+  const [grade, setGrade] = useState(String(gradeDefault || localStorage.getItem('ai-grade') || '6'));
+  const detailsRef = useRef(null);
+  // Chọn bài theo SGK ở trên → điền sẵn chủ đề và mở khung AI
+  useEffect(() => {
+    if (!topicPreset) return;
+    setTopic(topicPreset);
+    if (detailsRef.current) detailsRef.current.open = true;
+  }, [topicPreset]);
+  useEffect(() => { if (gradeDefault) setGrade(String(gradeDefault)); }, [gradeDefault]);
   const [count, setCount] = useState(5);
   const [level, setLevel] = useState('vừa');
   const [types, setTypes] = useState(['mcq', 'short']);
@@ -399,7 +453,7 @@ function AIGenerator({ subject, onAdd }) {
   }
 
   return html`
-    <details class="card gen ai" open=${!!preset}>
+    <details class="card gen ai" open=${!!preset} ref=${detailsRef}>
       <summary>✨ AI soạn đề (Gemini)</summary>
       <label>Chủ đề / nội dung cần ôn
         <textarea rows="3" value=${topic} onInput=${(e) => setTopic(e.target.value)}
@@ -767,4 +821,94 @@ export function Progress({ profile }) {
             </a>`)}
         </div>
       </div>`}`;
+}
+
+// =====================================================================
+//  HỌC SINH: tên đăng nhập, lớp, đặt lại mật khẩu, mã mời
+// =====================================================================
+export function ResetPasswordModal({ user, onClose }) {
+  const [pw, setPw] = useState(randomPassword());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState(false);
+  async function save() {
+    setBusy(true); setErr('');
+    try {
+      if (/[^\x00-\x7F]/.test(pw)) throw new Error('Mật khẩu không nên có chữ tiếng Việt có dấu.');
+      await rpc('reset_password', { p_user: user.id, p_password: pw });
+      setDone(true);
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+  return html`
+    <${Modal} title=${'Đặt lại mật khẩu – ' + user.full_name} onClose=${onClose}
+      footer=${done ? html`<button class="btn primary" onClick=${onClose}>Xong</button>`
+        : html`<button class="btn" onClick=${onClose}>Huỷ</button>
+               <button class="btn primary" disabled=${busy || pw.length < 6} onClick=${save}>${busy ? 'Đang lưu…' : 'Đặt mật khẩu này'}</button>`}>
+      ${done ? html`
+        <div class="alert ok">✔ Đã đặt mật khẩu mới.</div>
+        <div class="cred-box">
+          <div><span class="muted small">Tên đăng nhập</span><b class="mono">${user.login}</b></div>
+          <div><span class="muted small">Mật khẩu mới</span><b class="mono">${pw}</b></div>
+        </div>
+        <p class="small muted">Gửi thông tin này cho người dùng. Nhắc tắt bộ gõ tiếng Việt khi gõ mật khẩu.</p>`
+      : html`
+        <div class="stack">
+          <p class="small muted">Tài khoản: <b class="mono">${user.login}</b></p>
+          <label>Mật khẩu mới (ít nhất 6 ký tự, không dấu)
+            <div class="row">
+              <input class="mono" value=${pw} onInput=${(e) => setPw(e.target.value)} autocapitalize="off" spellcheck="false" />
+              <button type="button" class="btn" onClick=${() => setPw(randomPassword())}>Tạo ngẫu nhiên</button>
+            </div>
+          </label>
+          <${ErrorBox} msg=${err} />
+        </div>`}
+    </${Modal}>`;
+}
+
+export function StudentsPage({ profile }) {
+  const [resetFor, setResetFor] = useState(null);
+  const [msg, setMsg] = useState('');
+  const [list, err, reload] = useLoad(() => rpc('my_students'));
+
+  async function changeGrade(s, g) {
+    setMsg('');
+    try { await rpc('set_student_grade', { p_student: s.id, p_grade: g ? Number(g) : null }); setMsg(`✔ Đã cập nhật lớp của ${s.full_name}.`); reload(); }
+    catch (e) { setMsg(e.message); }
+  }
+
+  return html`
+    <div class="page-head">
+      <div>
+        <h1>Học sinh</h1>
+        <p class="page-sub">Tên đăng nhập, lớp học và mật khẩu của các em.</p>
+      </div>
+    </div>
+    <${InviteCard} profile=${profile} first=${list && list.length === 0} students=${list || []} />
+    ${err && html`<${ErrorBox} msg=${err} />`}
+    ${msg && html`<div class="alert ok">${msg}</div>`}
+    ${!list ? html`<${Loading} />` : list.length > 0 && html`
+      <div class="card table-card">
+        <table class="table">
+          <thead><tr><th>Học sinh</th><th>Tên đăng nhập</th><th>Lớp</th><th>Đăng nhập gần nhất</th><th></th></tr></thead>
+          <tbody>
+            ${list.map((s) => html`
+              <tr>
+                <td data-label="Học sinh"><div class="cell-user"><span class="avatar sm">${s.full_name.slice(0, 1).toUpperCase()}</span><b>${s.full_name}</b></div></td>
+                <td data-label="Tên đăng nhập"><span class="mono pill">${s.login}</span></td>
+                <td data-label="Lớp">
+                  <select class="select-sm" value=${s.grade || ''} onChange=${(e) => changeGrade(s, e.target.value)}>
+                    <option value="">—</option>
+                    ${Array.from({ length: 12 }, (_, i) => i + 1).map((g) => html`<option value=${g}>Lớp ${g}</option>`)}
+                  </select>
+                </td>
+                <td data-label="Đăng nhập gần nhất" class="muted small">${s.last_sign_in_at ? fmtDate(s.last_sign_in_at) : 'Chưa đăng nhập'}</td>
+                <td class="actions">
+                  <button class="btn sm" onClick=${() => setResetFor(s)}><${Icon} name="key" size=${15} /> Đặt lại mật khẩu</button>
+                </td>
+              </tr>`)}
+          </tbody>
+        </table>
+      </div>`}
+    ${resetFor && html`<${ResetPasswordModal} user=${resetFor} onClose=${() => setResetFor(null)} />`}`;
 }

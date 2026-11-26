@@ -118,3 +118,44 @@ Khóa chỉ nằm trên máy chủ Supabase (trong `supabase/functions/ai/index.
 
 Code nằm ở `supabase/functions/ai/index.ts`. Sau khi sửa, vào Supabase → **Edge Functions → ai → Code**, dán code mới rồi bấm **Deploy**.
 Cài đặt *Verify JWT with legacy secret* để **tắt**, vì hàm đã tự kiểm tra đăng nhập và vai trò.
+
+---
+
+## Nâng cấp 2 – Quản trị, mục lục SGK lớp 6, kiểm tra bài trên lớp, giao diện mới
+
+**Cài đặt (đã làm sẵn trên project hiện tại):**
+
+1. Supabase → SQL Editor → dán toàn bộ `supabase/002_nang_cap.sql` → Run (chạy **sau** `schema.sql`).
+2. Cấp quyền admin cho tài khoản của bạn:
+   ```sql
+   update public.profiles set is_admin = true
+   where id = (select id from auth.users where email = 'email-cua-ban@gmail.com');
+   ```
+3. Cài lại Edge Function `ai` bằng code mới trong `supabase/functions/ai/index.ts`.
+
+**Tính năng mới:**
+
+- **Quản trị** (chỉ admin thấy): thống kê toàn hệ thống; danh sách mọi tài khoản kèm tên đăng nhập, vai trò, lớp, lần đăng nhập gần nhất; sửa vai trò, lớp, người giao bài; **đặt lại mật khẩu**; khoá hoặc mở khoá; xoá tài khoản.
+- **Học sinh** (người giao bài): xem **tên đăng nhập** của các em, đổi lớp, **đặt lại mật khẩu** cho em trong vài giây.
+- **Mục lục SGK lớp 6 – Kết nối tri thức với cuộc sống** (`js/curriculum.js`): Toán, Ngữ văn, Tiếng Anh (Global Success), KHTN, Lịch sử và Địa lí, GDCD, Tin học, Công nghệ.
+  - Khi giao bài, chọn **Môn → Chương → Bài**. App tự đặt tên bài và điền sẵn chủ đề cho **AI soạn đề**.
+- **Kiểm tra bài trên lớp**: em (hoặc bạn) chụp ảnh vở bài làm ở trường.
+  - AI đọc chữ viết tay, kiểm tra **từng bài đúng/sai**, đưa lời giải đúng và ước lượng điểm.
+  - Bạn xem rồi viết nhận xét.
+- **Giao diện mới**: thanh điều hướng bên trái (trên điện thoại là menu ☰), thẻ số liệu, bảng biểu, trang đăng nhập 2 cột.
+- **Đăng nhập**:
+  - Có nút 👁 để xem mật khẩu đang gõ.
+  - Báo lỗi kèm cách khắc phục.
+  - Có mục "Quên mật khẩu?".
+  - Đăng xuất chỉ thoát trên thiết bị đang dùng.
+
+## Không đăng nhập được? (báo "Sai tên đăng nhập hoặc mật khẩu")
+
+1. **Tắt bộ gõ tiếng Việt** (Unikey/EVKey) khi gõ mật khẩu. Trên điện thoại, chuyển bàn phím sang tiếng Anh. Bấm 👁 để xem mình đang gõ gì.
+2. **Học sinh** đăng nhập bằng **tên đăng nhập** (VD: `baongan`), **không phải** tên hiển thị ("Bảo Ngân").
+3. **Người giao bài** đăng nhập bằng **đúng email đã dùng khi tạo tài khoản**. Admin xem được email này trong trang Quản trị.
+4. Vẫn không được → người giao bài vào **Học sinh → Đặt lại mật khẩu** (cho em), hoặc admin vào **Quản trị → 🔑** (cho bất kỳ ai).
+
+**Kiểm thử:**
+- `tests/test_upgrade.py`: 35 kiểm tra cơ sở dữ liệu.
+- `tests/e2e_v2.py`: 16 kiểm tra trên Supabase thật, gồm cả AI kiểm tra ảnh bài trên lớp.
