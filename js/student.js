@@ -2,7 +2,7 @@ import { html, useState, useRef, useEffect } from './lib.js';
 import { sb, q, rpc, signedUrls, BUCKET } from './db.js';
 import {
   useLoad, Loading, ErrorBox, Back, go, TYPE_LABEL, fmtDate, fmtNum, dueInfo, ScoreBadge, scoreOn10, nl2br, plainMath, Icon,
-  toast, confirmDialog, EmptyState, SubjectChip, subjectTone, ProgressRing, relTime, countdown,
+  toast, confirmDialog, EmptyState, SubjectChip, subjectTone, ProgressRing, relTime, countdown, LessonPicker,
 } from './ui.js';
 import { AnswerView, keyOf } from './teacher.js';
 import { ai } from './db.js';
@@ -85,7 +85,8 @@ export function StudentHome({ profile }) {
 
     <div class="section-bar"><h2>Bài cần làm <span class="count-pill">${todo.length}</span></h2></div>
     ${todo.length === 0
-      ? html`<${EmptyState} icon="check" title="Em đã làm hết bài rồi!" text="Khi có bài mới, bài sẽ hiện ở đây." />`
+      ? html`<${EmptyState} icon="check" title="Em đã làm hết bài rồi!" text="Khi có bài mới, bài sẽ hiện ở đây." />
+             <${SelfPick} />`
       : html`<div class="task-grid">${todo.map((a) => html`<${Card} a=${a} />`)}</div>`}
 
     ${waiting.length > 0 && html`
@@ -95,6 +96,45 @@ export function StudentHome({ profile }) {
     ${done.length > 0 && html`
       <div class="section-bar"><h2>Đã có điểm <span class="count-pill">${done.length}</span></h2></div>
       <div class="task-grid">${done.map((a) => html`<${Card} a=${a} />`)}</div>`}`;
+}
+
+// ---------------------------------------------------------------------
+//  Hôm nay không có bài → em tự chọn môn, AI soạn đề và giao luôn
+// ---------------------------------------------------------------------
+const SELF_SUBJECTS = ['Toán', 'Ngữ văn', 'Tiếng Anh', 'Khoa học tự nhiên', 'Lịch sử và Địa lí', 'Giáo dục công dân', 'Tin học', 'Công nghệ'];
+
+function SelfPick() {
+  const [subject, setSubject] = useState('');
+  const [lesson, setLesson] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const okSubject = SELF_SUBJECTS.includes(subject);
+
+  async function take() {
+    setBusy(true); setErr('');
+    try {
+      const { assignment_id } = await ai({ action: 'self_assign', subject, lesson });
+      toast('Đã có bài ' + subject + ' cho em. Cố lên nhé!');
+      go('/lam/' + assignment_id);
+    } catch (e) {
+      setErr(e.message);
+      setBusy(false);
+    }
+  }
+
+  return html`
+    <div class="card stack">
+      <div class="card-title"><${Icon} name="sparkles" /> Hôm nay chưa có bài? Em chọn môn muốn làm</div>
+      <${LessonPicker} subject=${subject} onPick=${(p) => { setSubject(p.subject || ''); setLesson(p.lesson || p.chapter || ''); setErr(''); }} />
+      ${subject && !okSubject && html`<p class="small muted">Môn này chưa lấy bài được, em chọn môn khác nhé.</p>`}
+      <p class="small muted">Chọn chương hoặc bài nếu em muốn ôn đúng phần đó. Không chọn thì AI ra bài ôn những gì em đã học.</p>
+      <${ErrorBox} msg=${err} />
+      <div class="row">
+        <button class="btn primary" disabled=${busy || !okSubject} onClick=${take}>
+          ${busy ? 'AI đang soạn bài cho em…' : html`<${Icon} name="sparkles" /> Lấy bài`}
+        </button>
+      </div>
+    </div>`;
 }
 
 // =====================================================================

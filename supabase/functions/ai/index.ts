@@ -1,6 +1,6 @@
 // Supabase Edge Function "ai" – gọi Gemini để soạn đề và gợi ý chấm bài.
 // Khoá Gemini nằm trong Secrets của Supabase (GEMINI_API_KEY), không bao giờ gửi xuống trình duyệt.
-// Chỉ người giao bài (role = teacher) mới gọi được.
+// Soạn đề và chấm: chỉ người giao bài. Học sinh: kiểm tra bài trên lớp, xin gợi ý, tự chọn môn lấy bài.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const CORS = {
@@ -32,6 +32,7 @@ Deno.serve(async (req) => {
     // Học sinh chỉ được dùng AI để kiểm tra bài trên lớp của chính mình
     if (body.action === 'check_classwork') return json(await checkClasswork(sb, String(body.classwork_id ?? '')));
     if (body.action === 'hint') return json(await hint(sb, user.id, me?.grade, body));
+    if (body.action === 'self_assign') return json(await selfAssign(user.id, me, body));
     if (me?.role !== 'teacher') throw new HttpError(403, 'Chỉ người giao bài mới dùng được AI.');
 
     if (body.action === 'generate') return json(await generate(body));
@@ -136,6 +137,49 @@ Chỉ trả về JSON đúng dạng:
   }
   if (!questions.length) throw new HttpError(502, 'AI chưa soạn được câu hợp lệ, hãy thử lại hoặc viết chủ đề rõ hơn.');
   return { questions };
+}
+
+// ---------------------------------------------------------------------------
+//  1b. EM TỰ CHỌN MÔN ĐỂ LẤY BÀI (khi hôm nay không có bài)
+//  Đề và đáp án được lưu ngay trên máy chủ bằng khoá service_role, nên em không thấy đáp án.
+// ---------------------------------------------------------------------------
+const SELF_SUBJECTS = ['Toán', 'Ngữ văn', 'Tiếng Anh', 'Khoa học tự nhiên', 'Lịch sử và Địa lí', 'Giáo dục công dân', 'Tin học', 'Công nghệ'];
+
+async function selfAssign(uid: string, me: any, b: any) {
+  if (me?.role !== 'student') throw new HttpError(403, 'Chỉ học sinh mới tự lấy bài được.');
+  const subject = String(b.subject ?? '');
+  if (!SELF_SUBJECTS.includes(subject)) throw new HttpError(400, 'Em chọn một môn trong danh sách nhé.');
+  const lesson = String(b.lesson ?? '').trim().slice(0, 200);
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  if (!serviceKey) throw new HttpError(500, 'Máy chủ thiếu khoá SUPABASE_SERVICE_ROLE_KEY.');
+  const admin = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey, { auth: { persistSession: false } });
+
+  // Kiểm tra trước khi gọi AI để không tốn lượt AI vô ích
+  const { data: reason, error: e1 } = await admin.rpc('self_assign_block_reason', { p_student: uid });
+  if (e1) throw new HttpError(500, 'Máy chủ chưa cài phần "tự chọn bài" (chạy file 004_tu_chon_bai.sql).');
+  if (reason) throw new HttpError(400, String(reason));
+
+  const grade = me?.grade ? String(me.grade) : '6';
+  const vn = new Date(Date.now() + 7 * 3600 * 1000);
+  const month = vn.getUTCMonth() + 1;
+  const phase = month >= 8 || month === 1 ? 'học kỳ 1 (từ đầu năm học đến nay)' : 'từ đầu năm học đến nay';
+  const topic = lesson
+    ? `Bài/chương trong SGK lớp ${grade} bộ "Kết nối tri thức với cuộc sống": ${lesson}`
+    : `Ôn tập kiến thức môn ${subject} lớp ${grade} đã học trong ${phase}, theo SGK bộ "Kết nối tri thức với cuộc sống". Trộn nhiều bài khác nhau.`;
+  const { questions } = await generate({ topic, subject, grade, level: 'vừa', count: 6, types: ['mcq', 'short'] });
+
+  const dd = String(vn.getUTCDate()).padStart(2, '0') + '/' + String(vn.getUTCMonth() + 1).padStart(2, '0');
+  const { data: id, error: e2 } = await admin.rpc('create_self_assignment', {
+    p_student: uid,
+    p: {
+      title: `Em tự chọn · ${subject} · ${dd}`,
+      subject,
+      instructions: (lesson ? `Nội dung: ${lesson}\n` : '') + 'Bài em tự chọn khi hôm nay không có bài. Đề do AI soạn: thấy câu nào lạ thì báo anh nhé.',
+      questions,
+    },
+  });
+  if (e2) throw new HttpError(400, e2.message);
+  return { assignment_id: id };
 }
 
 // ---------------------------------------------------------------------------
