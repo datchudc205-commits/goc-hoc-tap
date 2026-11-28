@@ -205,3 +205,33 @@ Khi em đã làm hết bài, trang chính của em hiện ô **"Hôm nay chưa c
 3. Đưa các file của trang lên lại (GitHub Pages).
 
 Kiểm thử: `python tests/test_v4.py supabase/schema.sql supabase/002_nang_cap.sql supabase/003_thuong_phat.sql supabase/004_tu_chon_bai.sql`
+
+## Nâng cấp 5 – Ảnh đề bài khi kiểm tra bài trên lớp, Góc trò chơi
+
+**Cài đặt (đã làm sẵn trên project hiện tại):**
+
+1. Supabase → SQL Editor → dán toàn bộ `supabase/005_de_bai_tro_choi.sql` → Run. Chạy **sau** `004_tu_chon_bai.sql`.
+2. Cài lại Edge Function `ai` bằng code trong `supabase/functions/ai/index.ts`. Code mới có thêm `scan_problem` và `game_quiz`.
+
+**Ảnh đề bài (menu "Kiểm tra bài trên lớp"):**
+
+- Khi gửi bài có 2 phần: **① Ảnh đề bài** (trang sách, phiếu bài tập; tối đa 4 ảnh, nên có) và **② Ảnh bài làm**.
+- AI chạy 2 bước:
+  1. **Đọc đề** từ ảnh đề.
+  2. **Chấm bài trong vở theo đúng đề đó.** Bài nào em chưa làm được đánh dấu "Chưa làm".
+- Trên trang kết quả có thể:
+  - xem đề AI đã đọc;
+  - **Sửa đề** nếu AI đọc nhầm số, rồi bấm "Kiểm tra lại";
+  - **Đọc lại đề**, hoặc **thêm / đổi ảnh đề** cho bài đã gửi.
+
+**Góc trò chơi (menu "Góc trò chơi"):**
+
+- 6 trò: 🎈 Bắn bóng bay, 🃏 Lật thẻ tìm cặp, ⚡ Nhanh tay 60 giây, ✅ Đúng hay Sai, 🔤 Xếp chữ, 🏁 Đua về đích (thi với rô-bốt).
+- Nội dung chơi:
+  - **Toán 6** tự sinh: 7 chủ đề, mỗi lượt câu hỏi mới.
+  - **Từ vựng Tiếng Anh 6**: 12 Unit.
+  - **Ôn bài đã làm**: lấy từ bài anh đã trả. Trang kết quả bài có nút "Ôn lại bằng trò chơi".
+  - **AI theo bài học**: tối đa 15 lần/ngày.
+- Chơi xong, app hiện lại các câu em làm sai để ôn.
+- Đúng từ 80% (ít nhất 8 câu) thì được **+1 ⭐**. Số sao tối đa mỗi ngày do anh chọn (mặc định 2).
+- Trang của anh: xem em đã chơi gì, đúng bao nhiêu và chọn số sao tối đa mỗi ngày. Có thể bật **"Làm xong bài mới được chơi"** để khoá trò chơi khi em còn bài chưa nộp. Có nút **Chơi thử**.
