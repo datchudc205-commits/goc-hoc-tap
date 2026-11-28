@@ -807,3 +807,167 @@ a.hero-stars b { color: #fde047; }
 .shop-bar i { display: block; height: 100%; background: linear-gradient(90deg, #fbbf24, #f59e0b); }
 .suggest-box { border: 1px dashed #f59e0b; background: var(--mid-50); border-radius: 12px; padding: .8rem .9rem; display: flex; flex-direction: column; gap: .35rem; }
 .suggest-box p { margin: 0; color: var(--text-2); }
+
+/* =====================================================================
+   v5 – ảnh đề bài (kiểm tra bài trên lớp), góc trò chơi
+   ===================================================================== */
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: .5rem; width: 100%; flex-wrap: wrap; }
+.center-row { justify-content: center; flex-wrap: wrap; }
+.ok-text { color: var(--good-text); font-weight: 600; }
+.check-row { align-items: flex-start; cursor: pointer; }
+.check-row input { width: auto; margin-top: .25rem; }
+
+/* Các bước gửi bài trên lớp */
+.cw-steps { list-style: none; display: flex; gap: .5rem; padding: 0; margin: 0 0 1rem; flex-wrap: wrap; }
+.cw-steps li { display: flex; align-items: center; gap: .45rem; padding: .4rem .8rem .4rem .45rem; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: .86rem; color: var(--text-2); }
+.cw-steps li b { width: 22px; height: 22px; border-radius: 50%; background: var(--line-2); display: inline-flex; align-items: center; justify-content: center; font-size: .75rem; }
+.cw-steps li.done { border-color: var(--good-line); background: var(--good-50); }
+.cw-steps li.done b { background: var(--good); color: #fff; }
+.cw-steps i { color: var(--muted); font-style: normal; font-size: .78rem; }
+.de-card { border-top: 3px solid var(--violet); }
+.de-empty .btn { align-self: flex-start; }
+.small-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); margin-bottom: .75rem; }
+.de-list { margin: 0 0 .5rem; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: .5rem; }
+.de-list li { background: var(--violet-50); border: 1px solid var(--violet-line); border-radius: 10px; padding: .55rem .75rem; font-size: .92rem; }
+.de-list li b { display: block; color: var(--violet); font-size: .8rem; margin-bottom: .15rem; }
+.de-edit { display: grid; grid-template-columns: 90px 1fr auto; gap: .4rem; align-items: start; }
+.de-edit input, .de-edit textarea { margin: 0; }
+@media (max-width: 520px) { .de-edit { grid-template-columns: 1fr auto; } .de-edit textarea { grid-column: 1 / -1; } }
+.ai-steps { list-style: none; padding: 0; margin: .5rem 0; text-align: left; display: inline-flex; flex-direction: column; gap: .35rem; }
+.ai-steps li { color: var(--muted); }
+.ai-steps li.now { color: var(--text); font-weight: 650; }
+.ai-steps li.ok { color: var(--good-text); }
+
+/* ---------- Góc trò chơi ---------- */
+.chips.sub { margin: .75rem 0 .35rem; }
+.chips.sub .chip { font-size: .82rem; }
+.ai-game { display: flex; flex-direction: column; gap: .6rem; align-items: flex-start; margin-top: .5rem; }
+.ai-game .lesson-picker { width: 100%; }
+.game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .8rem; }
+.game-card { font: inherit; text-align: left; cursor: pointer; border: 1.5px solid var(--line); background: var(--surface); color: var(--text);
+  border-radius: 16px; padding: 1rem; display: flex; flex-direction: column; gap: .3rem; transition: transform .15s, border-color .15s, box-shadow .15s; }
+.game-card:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--primary); box-shadow: var(--shadow-lg); }
+.game-card .small { color: var(--muted); }
+.game-card.off { opacity: .45; cursor: not-allowed; }
+.game-ico { font-size: 2rem; line-height: 1; }
+.game-cta { margin-top: 1rem; border-color: var(--violet-line); background: var(--violet-50); color: var(--violet); font-weight: 650; }
+.g-lock { max-width: 520px; margin: 2rem auto; display: flex; flex-direction: column; align-items: center; gap: .6rem; }
+
+.g-top { display: flex; align-items: center; gap: .6rem; margin-bottom: .8rem; }
+.g-title { flex: 1; text-align: center; font-weight: 750; font-size: 1.1rem; display: flex; flex-direction: column; align-items: center; }
+.g-title small { font-weight: 500; font-size: .78rem; color: var(--muted); }
+.g-stage { max-width: 760px; margin: 0 auto; }
+.g-hud { display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; margin-bottom: .8rem; }
+.g-hud-i { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: .35rem .85rem; display: flex; flex-direction: column; align-items: center; min-width: 88px; }
+.g-hud-i span { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.g-hud-i b { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.g-hud-i.hl b { color: var(--primary); }
+.g-hud-i.danger b { color: var(--bad); }
+.g-tip { text-align: center; color: var(--muted); font-size: .88rem; margin: 0 0 .6rem; }
+.g-question { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1rem 1.2rem; text-align: center;
+  font-size: 1.25rem; font-weight: 700; margin-bottom: .9rem; box-shadow: var(--shadow); transition: background .2s, border-color .2s; }
+.g-question.big { font-size: 1.6rem; padding: 1.4rem 1rem; }
+.g-question.ok { background: var(--good-50); border-color: var(--good); }
+.g-question.bad { background: var(--bad-50); border-color: var(--bad); animation: shake .35s; }
+.g-timebar { height: 8px; background: var(--line-2); border-radius: 99px; overflow: hidden; margin-bottom: .8rem; }
+.g-timebar i { display: block; height: 100%; background: linear-gradient(90deg, #22c55e, #f59e0b); transition: width .2s linear; }
+.g-options { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.g-opt { font: inherit; font-size: 1.15rem; font-weight: 700; padding: 1rem .8rem; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface);
+  color: var(--text); cursor: pointer; display: flex; align-items: center; gap: .6rem; min-height: 64px; transition: transform .1s, border-color .1s; }
+.g-opt:hover { border-color: var(--primary); }
+.g-opt:active { transform: scale(.97); }
+.g-opt kbd, .tf-btns kbd { font: inherit; font-size: .7rem; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: .05rem .35rem; }
+.g-sm { font-size: .88em; } .g-xs { font-size: .74em; }
+@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+
+/* Bóng bay */
+.balloon-sky { position: relative; height: 380px; border-radius: 18px; overflow: hidden;
+  background: linear-gradient(180deg, #bfdbfe 0%, #e0f2fe 60%, #ecfccb 100%); border: 1px solid var(--line); }
+[data-theme="dark"] .balloon-sky { background: linear-gradient(180deg, #0c1a3a 0%, #13284f 60%, #1a2e1a 100%); }
+.balloon { position: absolute; bottom: -130px; width: 21%; max-width: 130px; aspect-ratio: 5 / 6; border: 0; cursor: pointer; padding: .4rem;
+  border-radius: 50% 50% 48% 52% / 58% 58% 42% 42%; color: #fff; font: inherit; font-weight: 800; font-size: 1.05rem;
+  box-shadow: inset -8px -10px 0 rgba(0, 0, 0, .12), 0 6px 12px rgba(0, 0, 0, .12); animation: rise var(--rise, 8s) linear forwards;
+  display: flex; align-items: center; justify-content: center; text-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
+.balloon::after { content: ''; position: absolute; left: 50%; top: 100%; width: 1px; height: 40px; background: rgba(0, 0, 0, .25); }
+.balloon.c0 { background: #ef4444; } .balloon.c1 { background: #3b82f6; } .balloon.c2 { background: #22c55e; } .balloon.c3 { background: #a855f7; }
+.balloon.bad { opacity: .35; filter: grayscale(1); cursor: default; }
+.balloon.pop { animation: pop .45s ease-out forwards; }
+.balloon.reveal { outline: 4px solid #facc15; animation-play-state: paused; }
+@keyframes rise { from { transform: translateY(0); } to { transform: translateY(-560px); } }
+@keyframes pop { to { transform: translateY(-200px) scale(1.6); opacity: 0; } }
+/* Bóng bay là luật chơi (đếm giờ), không phải hiệu ứng trang trí → giữ tốc độ kể cả khi máy bật "giảm chuyển động" */
+@media (prefers-reduced-motion: reduce) { .balloon-sky .balloon:not(.pop) { animation-duration: var(--rise, 8s) !important; } }
+
+/* Lật thẻ */
+.mem-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .55rem; }
+.mem-card { font: inherit; aspect-ratio: 1 / 1; border-radius: 14px; border: 0; cursor: pointer; position: relative; padding: .35rem;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-weight: 750; font-size: 1.05rem; box-shadow: var(--shadow);
+  transition: transform .2s; display: flex; align-items: center; justify-content: center; text-align: center; }
+.mem-card.a { background: linear-gradient(135deg, #f59e0b, #f97316); }
+.mem-card .mem-front { display: none; }
+.mem-card .mem-back { font-size: 1.8rem; }
+.mem-card.shown { background: var(--surface); color: var(--text); border: 2px solid #6366f1; transform: rotateY(0) scale(1.02); }
+.mem-card.a.shown { border-color: #f97316; }
+.mem-card.shown .mem-front { display: block; }
+.mem-card.shown .mem-back { display: none; }
+.mem-card.done { background: var(--good-50); border-color: var(--good); opacity: .75; }
+
+/* Đúng / sai */
+.tf-btns { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+.tf-btns button { font: inherit; font-size: 1.3rem; font-weight: 800; padding: 1.1rem; border-radius: 16px; border: 0; cursor: pointer; color: #fff; display: flex; gap: .6rem; align-items: center; justify-content: center; }
+.tf-btns button:active { transform: scale(.97); }
+.tf-yes { background: #16a34a; } .tf-no { background: #dc2626; }
+.tf-btns kbd { color: rgba(255, 255, 255, .8); border-color: rgba(255, 255, 255, .5); }
+
+/* Xếp chữ */
+.scr-slots { display: flex; gap: .35rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1rem; }
+.scr-slot { width: 44px; height: 52px; border-bottom: 3px solid var(--primary); display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1.6rem; font-weight: 800; background: var(--surface); border-radius: 8px 8px 0 0; cursor: pointer; }
+.scr-slots.shake { animation: shake .4s; }
+.scr-slots.shake .scr-slot { border-color: var(--bad); color: var(--bad); }
+.scr-slots.solved .scr-slot { border-color: var(--good); color: var(--good); }
+.scr-tiles { display: flex; gap: .45rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1rem; }
+.scr-tile { font: inherit; width: 50px; height: 50px; border-radius: 12px; border: 0; cursor: pointer; font-size: 1.4rem; font-weight: 800;
+  background: linear-gradient(135deg, #0ea5e9, #6366f1); color: #fff; box-shadow: 0 4px 0 #3730a3; transition: transform .1s; }
+.scr-tile:active { transform: translateY(3px); box-shadow: 0 1px 0 #3730a3; }
+.scr-tile.used { opacity: .2; pointer-events: none; }
+
+/* Đua xe */
+.race-pick { max-width: 480px; margin: 1rem auto; }
+.race-track { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: .8rem; margin-bottom: .9rem; display: flex; flex-direction: column; gap: .5rem; }
+.lane { display: flex; align-items: center; gap: .5rem; }
+.lane-name { width: 58px; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.road { flex: 1; height: 44px; position: relative; border-radius: 10px;
+  background: repeating-linear-gradient(90deg, var(--line-2) 0 18px, transparent 18px 36px), var(--surface-2); border: 1px dashed var(--line); }
+.car { position: absolute; top: 50%; transform: translateY(-50%) scaleX(-1); font-size: 1.9rem; transition: left .4s ease; }
+.lane:last-child .car { transform: translateY(-50%); }
+.flag { font-size: 1.4rem; }
+
+/* Kết quả */
+.g-result { max-width: 560px; margin: 0 auto; text-align: center; display: flex; flex-direction: column; align-items: center; gap: .7rem; padding: 1.6rem 1.2rem; }
+.g-face { font-size: 3.4rem; line-height: 1; animation: pageIn .4s ease; }
+.g-note { font-weight: 650; margin: 0; }
+.g-stats { display: flex; gap: .6rem; justify-content: center; flex-wrap: wrap; }
+.g-stats div { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: .55rem 1rem; display: flex; flex-direction: column; min-width: 96px; }
+.g-stats b { font-size: 1.3rem; }
+.g-stats span { font-size: .75rem; color: var(--muted); }
+.g-star { background: #fef9c3; color: #854d0e; font-weight: 750; padding: .45rem 1rem; border-radius: 99px; }
+[data-theme="dark"] .g-star { background: rgba(250, 204, 21, .15); color: #fde047; }
+.g-review { width: 100%; text-align: left; border-top: 1px solid var(--line); padding-top: .8rem; }
+.g-review-row { display: flex; justify-content: space-between; gap: .8rem; padding: .4rem 0; border-bottom: 1px dashed var(--line); font-size: .92rem; }
+.g-review-row b { color: var(--good-text); white-space: nowrap; }
+
+@media (max-width: 560px) {
+  .g-question.big { font-size: 1.3rem; }
+  .g-opt { font-size: 1rem; padding: .8rem .6rem; }
+  .balloon-sky { height: 340px; }
+  .balloon { font-size: .9rem; }
+  .mem-grid { gap: .4rem; }
+  .mem-card { font-size: .85rem; border-radius: 10px; }
+  .scr-slot { width: 34px; height: 44px; font-size: 1.3rem; }
+  .scr-tile { width: 42px; height: 42px; font-size: 1.2rem; }
+}
+
+.cw-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .2rem 1rem; margin-bottom: 1rem; }
+.cw-form .lesson-picker { display: contents; }
+.cw-form > label:last-child { grid-column: 1 / -1; }
