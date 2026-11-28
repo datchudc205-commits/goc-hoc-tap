@@ -1,5 +1,5 @@
-"""Kiểm thử 004_de_bai_tro_choi.sql (ảnh đề bài, góc trò chơi, giới hạn AI) trên Postgres thật.
-Dùng: python tests/test_v3.py supabase/schema.sql supabase/002_nang_cap.sql supabase/003_thuong_phat.sql supabase/004_de_bai_tro_choi.sql"""
+"""Kiểm thử 005_de_bai_tro_choi.sql (ảnh đề bài, góc trò chơi, giới hạn AI) trên Postgres thật.
+Dùng: python tests/test_v3.py supabase/schema.sql supabase/002_nang_cap.sql supabase/003_thuong_phat.sql supabase/005_de_bai_tro_choi.sql"""
 import json, sys, tempfile, uuid
 import pgserver, psycopg
 
