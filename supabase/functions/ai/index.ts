@@ -144,6 +144,16 @@ Chỉ trả về JSON đúng dạng:
 //  Đề và đáp án được lưu ngay trên máy chủ bằng khoá service_role, nên em không thấy đáp án.
 // ---------------------------------------------------------------------------
 const SELF_SUBJECTS = ['Toán', 'Ngữ văn', 'Tiếng Anh', 'Khoa học tự nhiên', 'Lịch sử và Địa lí', 'Giáo dục công dân', 'Tin học', 'Công nghệ'];
+const SUP: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+
+function plainMath(s: string): string {
+  return String(s ?? '')
+    .replace(/\\d?frac\{([^}]*)\}\{([^}]*)\}/g, '$1/$2')
+    .replace(/\\times/g, '×').replace(/\\cdot/g, '·').replace(/\\div/g, ':')
+    .replace(/\\neq/g, '≠').replace(/\\leq?\b/g, '≤').replace(/\\geq?\b/g, '≥')
+    .replace(/\^\{?(\d+)\}?/g, (_m: string, d: string) => d.split('').map((c) => SUP[c]).join(''))
+    .replace(/\$\$?([^$]+?)\$\$?/g, '$1');
+}
 
 async function selfAssign(uid: string, me: any, b: any) {
   if (me?.role !== 'student') throw new HttpError(403, 'Chỉ học sinh mới tự lấy bài được.');
@@ -166,7 +176,15 @@ async function selfAssign(uid: string, me: any, b: any) {
   const topic = lesson
     ? `Bài/chương trong SGK lớp ${grade} bộ "Kết nối tri thức với cuộc sống": ${lesson}`
     : `Ôn tập kiến thức môn ${subject} lớp ${grade} đã học trong ${phase}, theo SGK bộ "Kết nối tri thức với cuộc sống". Trộn nhiều bài khác nhau.`;
-  const { questions } = await generate({ topic, subject, grade, level: 'vừa', count: 6, types: ['mcq', 'short'] });
+  const gen = await generate({ topic, subject, grade, level: 'vừa', count: 6, types: ['mcq', 'short'] });
+  // Không có ai duyệt đề nên đổi ký hiệu LaTeX ($2^4$, \cdot…) sang chữ thường em đọc được
+  const questions = gen.questions.map((q: any) => ({
+    ...q,
+    prompt: plainMath(q.prompt),
+    options: q.options.map(plainMath),
+    explanation: plainMath(q.explanation),
+    accepted: q.type === 'short' ? [...new Set([...q.accepted, ...q.accepted.map(plainMath)])] : q.accepted,
+  }));
 
   const dd = String(vn.getUTCDate()).padStart(2, '0') + '/' + String(vn.getUTCMonth() + 1).padStart(2, '0');
   const { data: id, error: e2 } = await admin.rpc('create_self_assignment', {
