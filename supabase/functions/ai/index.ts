@@ -151,7 +151,8 @@ function plainMath(s: string): string {
     .replace(/\\d?frac\{([^}]*)\}\{([^}]*)\}/g, '$1/$2')
     .replace(/\\times/g, '×').replace(/\\cdot/g, '·').replace(/\\div/g, ':')
     .replace(/\\neq/g, '≠').replace(/\\leq?\b/g, '≤').replace(/\\geq?\b/g, '≥')
-    .replace(/\^\{?(\d+)\}?/g, (_m: string, d: string) => d.split('').map((c) => SUP[c]).join(''))
+    .replace(/\^\{(\d+)\}|\^(\d+)/g, (_m: string, a: string, b: string) => (a ?? b).split('').map((c) => SUP[c]).join(''))
+    .replace(/\^\{([^}]*)\}/g, '^($1)')
     .replace(/\$\$?([^$]+?)\$\$?/g, '$1');
 }
 
