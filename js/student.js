@@ -473,6 +473,10 @@ export function ResultView({ id }) {
             ${e.amount > 0 ? '+' : ''}${e.amount} ⭐ ${e.code === 'ontime' ? 'Nộp đúng hạn' : e.code === 'late' ? 'Nộp muộn' : e.code === 'score' ? 'Điểm tốt' : e.reason}</span>`)}
           <a class="link small" href="#/sao">Xem sao của em →</a>
         </div>`}
+      ${returned && qs.some((x) => x.type === 'mcq' || x.type === 'short') && html`
+        <button class="btn game-cta" onClick=${() => { sessionStorage.setItem('game-pack', 'bai:' + s.assignment_id); go('/tro-choi'); }}>
+          🎮 Ôn lại bài này bằng trò chơi
+        </button>`}
     </div>
 
     ${qs.map((x, i) => {

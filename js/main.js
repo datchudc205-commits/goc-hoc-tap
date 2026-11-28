@@ -8,6 +8,7 @@ import { StudentHome, DoAssignment, ResultView } from './student.js';
 import { ClassworkList, ClassworkNew, ClassworkDetail } from './classwork.js';
 import { AdminPage } from './admin.js';
 import { TeacherRewards, StudentStars } from './rewards.js';
+import { GameHub, TeacherGames } from './games.js';
 
 function SetupNeeded() {
   return html`
@@ -29,6 +30,7 @@ function navFor(profile, c = {}) {
       { group: 'Học tập', items: [
         { href: '/', label: 'Bài của em', short: 'Bài tập', icon: 'clipboard', badge: c.todo },
         { href: '/tren-lop', label: 'Kiểm tra bài trên lớp', short: 'Trên lớp', icon: 'camera' },
+        { href: '/tro-choi', label: 'Góc trò chơi', short: 'Trò chơi', icon: 'game' },
         { href: '/sao', label: 'Sao & phần thưởng', short: 'Sao', icon: 'star', badge: c.tasks },
       ] },
     ];
@@ -44,6 +46,7 @@ function navFor(profile, c = {}) {
     ] },
     { group: 'Quản lý', items: [
       { href: '/thuong-phat', label: 'Thưởng & thử thách', short: 'Thưởng', icon: 'star', badge: c.rewards, badgeTone: 'warn' },
+      { href: '/tro-choi', label: 'Góc trò chơi', short: 'Trò chơi', icon: 'game' },
       { href: '/hoc-sinh', label: 'Học sinh', short: 'Học sinh', icon: 'users' },
       ...(profile.is_admin ? [{ href: '/admin', label: 'Quản trị hệ thống', short: 'Quản trị', icon: 'shield' }] : []),
     ] },
@@ -158,6 +161,8 @@ function TeacherRoutes({ path, profile }) {
   if (path === '/tien-do') return html`<${Progress} profile=${profile} />`;
   if (path === '/hoc-sinh') return html`<${StudentsPage} profile=${profile} />`;
   if (path === '/thuong-phat') return html`<${TeacherRewards} profile=${profile} />`;
+  if (path === '/tro-choi') return html`<${TeacherGames} profile=${profile} />`;
+  if (path === '/tro-choi/choi-thu') return html`<${GameHub} profile=${profile} />`;
   if (path === '/tren-lop') return html`<${ClassworkList} profile=${profile} />`;
   if (path === '/tren-lop/moi') return html`<${ClassworkNew} profile=${profile} />`;
   if ((m = match('/tren-lop/:id', path))) return html`<${ClassworkDetail} key=${m.id} id=${m.id} profile=${profile} />`;
@@ -171,6 +176,7 @@ function StudentRoutes({ path, profile }) {
   if ((m = match('/lam/:id', path))) return html`<${DoAssignment} key=${m.id} profile=${profile} assignmentId=${m.id} />`;
   if ((m = match('/ket-qua/:id', path))) return html`<${ResultView} key=${m.id} id=${m.id} />`;
   if (path === '/sao') return html`<${StudentStars} profile=${profile} />`;
+  if (path === '/tro-choi') return html`<${GameHub} profile=${profile} />`;
   if (path === '/tren-lop') return html`<${ClassworkList} profile=${profile} />`;
   if (path === '/tren-lop/moi') return html`<${ClassworkNew} profile=${profile} />`;
   if ((m = match('/tren-lop/:id', path))) return html`<${ClassworkDetail} key=${m.id} id=${m.id} profile=${profile} />`;
