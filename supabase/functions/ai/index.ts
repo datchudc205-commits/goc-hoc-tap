@@ -1,6 +1,6 @@
 // Supabase Edge Function "ai" – gọi Gemini để soạn đề và gợi ý chấm bài.
 // Khoá Gemini nằm trong Secrets của Supabase (GEMINI_API_KEY), không bao giờ gửi xuống trình duyệt.
-// Soạn đề, gợi ý chấm: chỉ người giao bài. Kiểm tra bài trên lớp, đọc đề, gợi ý cách làm, câu hỏi trò chơi: học sinh cũng dùng được.
+// Soạn đề và chấm: chỉ người giao bài. Học sinh: kiểm tra bài trên lớp (kèm đọc ảnh đề), xin gợi ý, tự chọn môn lấy bài, câu hỏi trò chơi.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const CORS = {
@@ -33,6 +33,7 @@ Deno.serve(async (req) => {
     if (body.action === 'check_classwork') return json(await checkClasswork(sb, String(body.classwork_id ?? '')));
     if (body.action === 'scan_problem') return json(await scanProblem(sb, String(body.classwork_id ?? '')));
     if (body.action === 'hint') return json(await hint(sb, user.id, me?.grade, body));
+    if (body.action === 'self_assign') return json(await selfAssign(user.id, me, body));
     if (body.action === 'game_quiz') return json(await gameQuiz(sb, me?.grade, body));
     if (me?.role !== 'teacher') throw new HttpError(403, 'Chỉ người giao bài mới dùng được AI.');
 
@@ -138,6 +139,68 @@ Chỉ trả về JSON đúng dạng:
   }
   if (!questions.length) throw new HttpError(502, 'AI chưa soạn được câu hợp lệ, hãy thử lại hoặc viết chủ đề rõ hơn.');
   return { questions };
+}
+
+// ---------------------------------------------------------------------------
+//  1b. EM TỰ CHỌN MÔN ĐỂ LẤY BÀI (khi hôm nay không có bài)
+//  Đề và đáp án được lưu ngay trên máy chủ bằng khoá service_role, nên em không thấy đáp án.
+// ---------------------------------------------------------------------------
+const SELF_SUBJECTS = ['Toán', 'Ngữ văn', 'Tiếng Anh', 'Khoa học tự nhiên', 'Lịch sử và Địa lí', 'Giáo dục công dân', 'Tin học', 'Công nghệ'];
+const SUP: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+
+function plainMath(s: string): string {
+  return String(s ?? '')
+    .replace(/\\d?frac\{([^}]*)\}\{([^}]*)\}/g, '$1/$2')
+    .replace(/\\times/g, '×').replace(/\\cdot/g, '·').replace(/\\div/g, ':')
+    .replace(/\\neq/g, '≠').replace(/\\leq?\b/g, '≤').replace(/\\geq?\b/g, '≥')
+    .replace(/\^\{(\d+)\}|\^(\d+)/g, (_m: string, a: string, b: string) => (a ?? b).split('').map((c) => SUP[c]).join(''))
+    .replace(/\^\{([^}]*)\}/g, '^($1)')
+    .replace(/\$\$?([^$]+?)\$\$?/g, '$1');
+}
+
+async function selfAssign(uid: string, me: any, b: any) {
+  if (me?.role !== 'student') throw new HttpError(403, 'Chỉ học sinh mới tự lấy bài được.');
+  const subject = String(b.subject ?? '');
+  if (!SELF_SUBJECTS.includes(subject)) throw new HttpError(400, 'Em chọn một môn trong danh sách nhé.');
+  const lesson = String(b.lesson ?? '').trim().slice(0, 200);
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  if (!serviceKey) throw new HttpError(500, 'Máy chủ thiếu khoá SUPABASE_SERVICE_ROLE_KEY.');
+  const admin = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey, { auth: { persistSession: false } });
+
+  // Kiểm tra trước khi gọi AI để không tốn lượt AI vô ích
+  const { data: reason, error: e1 } = await admin.rpc('self_assign_block_reason', { p_student: uid });
+  if (e1) throw new HttpError(500, 'Máy chủ chưa cài phần "tự chọn bài" (chạy file 004_tu_chon_bai.sql).');
+  if (reason) throw new HttpError(400, String(reason));
+
+  const grade = me?.grade ? String(me.grade) : '6';
+  const vn = new Date(Date.now() + 7 * 3600 * 1000);
+  const month = vn.getUTCMonth() + 1;
+  const phase = month >= 8 || month === 1 ? 'học kỳ 1 (từ đầu năm học đến nay)' : 'từ đầu năm học đến nay';
+  const topic = lesson
+    ? `Bài/chương trong SGK lớp ${grade} bộ "Kết nối tri thức với cuộc sống": ${lesson}`
+    : `Ôn tập kiến thức môn ${subject} lớp ${grade} đã học trong ${phase}, theo SGK bộ "Kết nối tri thức với cuộc sống". Trộn nhiều bài khác nhau.`;
+  const gen = await generate({ topic, subject, grade, level: 'vừa', count: 6, types: ['mcq', 'short'] });
+  // Không có ai duyệt đề nên đổi ký hiệu LaTeX ($2^4$, \cdot…) sang chữ thường em đọc được
+  const questions = gen.questions.map((q: any) => ({
+    ...q,
+    prompt: plainMath(q.prompt),
+    options: q.options.map(plainMath),
+    explanation: plainMath(q.explanation),
+    accepted: q.type === 'short' ? [...new Set([...q.accepted, ...q.accepted.map(plainMath)])] : q.accepted,
+  }));
+
+  const dd = String(vn.getUTCDate()).padStart(2, '0') + '/' + String(vn.getUTCMonth() + 1).padStart(2, '0');
+  const { data: id, error: e2 } = await admin.rpc('create_self_assignment', {
+    p_student: uid,
+    p: {
+      title: `Em tự chọn · ${subject} · ${dd}`,
+      subject,
+      instructions: (lesson ? `Nội dung: ${lesson}\n` : '') + 'Bài em tự chọn khi hôm nay không có bài. Đề do AI soạn: thấy câu nào lạ thì báo anh nhé.',
+      questions,
+    },
+  });
+  if (e2) throw new HttpError(400, e2.message);
+  return { assignment_id: id };
 }
 
 // ---------------------------------------------------------------------------
@@ -315,9 +378,9 @@ Chỉ trả về JSON: {"items":[{"q":"...","a":"...","wrong":["...","...","..."
   const out = await gemini([{ text: prompt }]);
   const items = [];
   for (const it of Array.isArray(out?.items) ? out.items : []) {
-    const q = String(it.q ?? '').trim().slice(0, 200);
-    const a = String(it.a ?? '').trim().slice(0, 40);
-    const wrong = [...new Set((Array.isArray(it.wrong) ? it.wrong : []).map((w: unknown) => String(w).trim().slice(0, 40)))]
+    const q = plainMath(String(it.q ?? '')).trim().slice(0, 200);
+    const a = plainMath(String(it.a ?? '')).trim().slice(0, 40);
+    const wrong = [...new Set((Array.isArray(it.wrong) ? it.wrong : []).map((w: unknown) => plainMath(String(w)).trim().slice(0, 40)))]
       .filter((w) => w && w.toLowerCase() !== a.toLowerCase()).slice(0, 3);
     if (q && a && wrong.length === 3) items.push({ q, a, wrong });
   }

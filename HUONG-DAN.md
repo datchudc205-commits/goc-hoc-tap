@@ -187,3 +187,21 @@ Cài đặt *Verify JWT with legacy secret* để **tắt**, vì hàm đã tự 
 **Kiểm thử:**
 - `tests/test_upgrade.py`: 35 kiểm tra cơ sở dữ liệu.
 - `tests/e2e_v2.py`: 16 kiểm tra trên Supabase thật, gồm cả AI kiểm tra ảnh bài trên lớp.
+
+---
+
+## Em tự chọn môn để lấy bài (nâng cấp 4)
+
+Khi em đã làm hết bài, trang chính của em hiện ô **"Hôm nay chưa có bài? Em chọn môn muốn làm"**. Em chọn môn (có thể chọn thêm chương/bài) rồi bấm **Lấy bài**: AI soạn 6 câu trắc nghiệm và điền đáp án, giao luôn cho em, hạn nộp cuối ngày. Nộp xong em thấy điểm ngay, sao được cộng như bài thường.
+
+- Mỗi ngày em tự lấy được tối đa **2 bài** (đổi số trong hàm `self_assign_daily_limit` ở `supabase/004_tu_chon_bai.sql`).
+- Còn bài chưa làm (kể cả bài bạn giao) thì chưa lấy thêm được.
+- Bài có tên `Em tự chọn · <môn> · <ngày>`, bạn xem và xoá được như bài thường.
+- Em không xem được đáp án: đề được lưu ngay trên máy chủ.
+
+**Cài (làm một lần):**
+1. Supabase → **SQL Editor** → dán toàn bộ `supabase/004_tu_chon_bai.sql` → **Run**.
+2. Supabase → **Edge Functions → ai → Code** → dán `supabase/functions/ai/index.ts` mới → **Deploy**.
+3. Đưa các file của trang lên lại (GitHub Pages).
+
+Kiểm thử: `python tests/test_v4.py supabase/schema.sql supabase/002_nang_cap.sql supabase/003_thuong_phat.sql supabase/004_tu_chon_bai.sql`
